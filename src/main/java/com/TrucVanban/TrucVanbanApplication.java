@@ -5,10 +5,14 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import io.github.cdimascio.dotenv.Dotenv;
 import io.github.cdimascio.dotenv.DotenvEntry;
 
+import java.util.TimeZone;
+
 @SpringBootApplication
 public class TrucVanbanApplication {
 
 	public static void main(String[] args) {
+		TimeZone.setDefault(TimeZone.getTimeZone("Asia/Ho_Chi_Minh"));
+
 		Dotenv dotenv = Dotenv.configure().ignoreIfMissing().load();
 		for (DotenvEntry entry : dotenv.entries()) {
 			System.setProperty(entry.getKey(), entry.getValue());
