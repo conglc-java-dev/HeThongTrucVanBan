@@ -1,6 +1,138 @@
 package com.TrucVanban.registry.service.impl;
 
+import com.TrucVanban.registry.dto.request.*;
+import com.TrucVanban.registry.dto.response.*;
+import com.TrucVanban.registry.entity.Certificate;
+import com.TrucVanban.registry.entity.Organization;
+import com.TrucVanban.registry.entity.SlaConfiguration;
+import com.TrucVanban.registry.enums.CertificateStatus;
+import com.TrucVanban.registry.enums.OrganizationStatus;
+import com.TrucVanban.registry.mapper.OrganizationMapper;
+import com.TrucVanban.registry.mapper.SlaConfigMapper;
+import com.TrucVanban.registry.repository.CertificateRepository;
+import com.TrucVanban.registry.repository.OrganizationRepository;
+import com.TrucVanban.registry.repository.SlaConfigurationRepository;
 import com.TrucVanban.registry.service.RegistryService;
+import com.TrucVanban.shared.exception.BusinessLogicException;
+import com.TrucVanban.shared.exception.DuplicateResourceException;
+import com.TrucVanban.shared.exception.ResourceNotFoundException;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+@Slf4j
+@Service
+@RequiredArgsConstructor
 public class RegistryServiceImpl implements RegistryService {
+
+    private final OrganizationRepository organizationRepository;
+    private final CertificateRepository certificateRepository;
+    private final SlaConfigurationRepository slaConfigurationRepository;
+    private final OrganizationMapper organizationMapper;
+    private final SlaConfigMapper slaConfigMapper;
+
+    @Override
+    @Transactional
+    public RegisterOrganizationResponse registerOrganization(RegisterOrganizationRequest request) {
+        if (organizationRepository.existsByCode(request.getCode())) {
+            throw new DuplicateResourceException("Mã tổ chức '" + request.getCode() + "' đã tồn tại trong hệ thống");
+        }
+
+        Organization organization = organizationMapper.toEntity(request);
+        organization = organizationRepository.save(organization);
+
+        Certificate certificate = organizationMapper.toCertificateEntity(request.getCertificate());
+        certificate.setOrganizationId(organization.getId());
+        certificateRepository.save(certificate);
+
+        log.info("Đăng ký tổ chức thành công: code={}, id={}", organization.getCode(), organization.getId());
+
+        return organizationMapper.toRegisterResponse(organization);
+    }
+
+    @Override
+    @Transactional
+    public SuspendOrganizationResponse suspendOrganization(String code, SuspendOrganizationRequest request) {
+        Organization organization = organizationRepository.findByCode(code)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy tổ chức với mã: " + code));
+
+        if (organization.getStatus() == OrganizationStatus.SUSPENDED) {
+            throw new BusinessLogicException("Tổ chức '" + code + "' đã bị khóa trước đó");
+        }
+
+        organization.setStatus(OrganizationStatus.SUSPENDED);
+        organizationRepository.save(organization);
+
+        log.info("Khóa tổ chức thành công: code={}, reason={}", code, request.getReason());
+
+        return organizationMapper.toSuspendResponse(organization);
+    }
+
+    @Override
+    @Transactional
+    public UpdateEndpointResponse updateEndpoint(String code, UpdateEndpointRequest request) {
+        Organization organization = organizationRepository.findByCode(code)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy tổ chức với mã: " + code));
+
+        organization.setReceiveEndpoint(request.getReceiveEndpoint());
+        organizationRepository.save(organization);
+
+        log.info("Cập nhật endpoint thành công: code={}, new_endpoint={}", code, request.getReceiveEndpoint());
+        return organizationMapper.toUpdateEndpointResponse(organization);
+    }
+
+    @Override
+    @Transactional
+    public UpdateCertificateResponse updateCertificate(String code, CertificateRequest request) {
+        Organization organization = organizationRepository.findByCode(code)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy tổ chức với mã: " + code));
+
+        // cũ E -> hủy
+        certificateRepository.findByOrganizationIdAndStatus(organization.getId(), CertificateStatus.ACTIVE)
+                .ifPresent(cert -> {
+                    cert.setStatus(CertificateStatus.EXPIRED);
+                    certificateRepository.save(cert);
+                });
+
+        Certificate newCert = organizationMapper.toCertificateEntity(request);
+        newCert.setOrganizationId(organization.getId());
+        newCert.setStatus(CertificateStatus.ACTIVE);
+        newCert = certificateRepository.save(newCert);
+
+        log.info("Cập nhật chứng thư số thành công: code={}, cert_id={}", code, newCert.getId());
+        return new UpdateCertificateResponse(newCert.getId(), newCert.getStatus());
+    }
+
+    @Override
+    public OrganizationDetailResponse getOrganizationDetail(String code) {
+        Organization organization = organizationRepository.findByCode(code)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy tổ chức với mã: " + code));
+
+        OrganizationDetailResponse response = organizationMapper.toOrganizationDetailResponse(organization);
+
+        certificateRepository.findByOrganizationIdAndStatus(organization.getId(), CertificateStatus.ACTIVE)
+                .ifPresent(cert -> {
+                    response.setActiveCertificate(organizationMapper.toActiveCertificateDto(cert));
+                });
+
+        return response;
+    }
+
+    @Override
+    @Transactional
+    public UpdateSlaConfigResponse updateSlaConfig(Integer documentPriority, UpdateSlaConfigRequest request) {
+        SlaConfiguration slaConfig = slaConfigurationRepository.findByDocumentPriority(documentPriority)
+                .orElseGet(() -> {
+                    SlaConfiguration newSla = new SlaConfiguration();
+                    newSla.setDocumentPriority(documentPriority);
+                    return newSla;
+                });
+
+        slaConfig.setMaxReceiveHours(request.getMaxReceiveHours());
+        slaConfig = slaConfigurationRepository.save(slaConfig);
+
+        log.info("Cập nhật SLA thành công: priority={}, maxHours={}", documentPriority, request.getMaxReceiveHours());
+        return slaConfigMapper.toResponse(slaConfig);
+    }
 }

@@ -21,7 +21,7 @@ import java.nio.file.AccessDeniedException;
 public class GlobalException {
     @ExceptionHandler(value = InvalidInputException.class)
     public ResponseEntity<?> invalidInput(InvalidInputException e) {
-        ResponseData response = ResponseData.<Void>builder()
+        ResponseData<Void> response = ResponseData.<Void>builder()
                 .message(e.getMessage())
                 .success(false)
                 .data(null)
@@ -33,7 +33,7 @@ public class GlobalException {
     @ExceptionHandler(Exception.class)
     public ResponseEntity<?> handleUnknownException(Exception e, HttpServletRequest request) {
         log.error("handleUnknownException", e);
-        ResponseData response = ResponseData.<Void>builder()
+        ResponseData<Void> response = ResponseData.<Void>builder()
                 .message(e.getMessage() != null && !e.getMessage().toLowerCase().contains("exception") ? e.getMessage() : "Lỗi hệ thống!")
                 .data(null)
                 .build();
@@ -46,7 +46,7 @@ public class GlobalException {
         String typeName = e.getRequiredType() != null ? e.getRequiredType().getSimpleName() : "Unknown";
         String message = String.format("Tham số '%s' có giá trị '%s' không đúng định dạng. Phải là kiểu '%s'.",
                 e.getName(), e.getValue(), typeName);
-        ResponseData response = ResponseData.<Void>builder()
+        ResponseData<Void> response = ResponseData.<Void>builder()
                 .message(message)
                 .data(null)
                 .build();
@@ -56,7 +56,7 @@ public class GlobalException {
 
     @ExceptionHandler(value = HttpMessageNotReadableException.class)
     public ResponseEntity<?> handleInvalidInput(HttpMessageNotReadableException ex) {
-        ResponseData response = ResponseData.<Void>builder()
+        ResponseData<Void> response = ResponseData.<Void>builder()
                 .message("Dữ liệu đầu vào không hợp lệ. Vui lòng kiểm tra định dạng JSON.")
                 .data(null)
                 .build();
@@ -66,7 +66,7 @@ public class GlobalException {
 
     @ExceptionHandler(value = BusinessLogicException.class)
     public ResponseEntity<?> handleInvalidInput(BusinessLogicException ex) {
-        ResponseData response = ResponseData.<Void>builder()
+        ResponseData<Void> response = ResponseData.<Void>builder()
                 .message(ex.getMessage())
                 .data(null)
                 .build();
@@ -76,7 +76,7 @@ public class GlobalException {
 
     @ExceptionHandler(value = UnauthorizedException.class)
     public ResponseEntity<?> unauthorize(UnauthorizedException e) {
-        ResponseData response = ResponseData.<Void>builder()
+        ResponseData<Void> response = ResponseData.<Void>builder()
                 .message("Bạn chưa đăng nhập hoặc phiên làm việc đã hết hạn.")
                 .data(null)
                 .build();
@@ -86,7 +86,7 @@ public class GlobalException {
 
     @ExceptionHandler(value = ResourceNotFoundException.class)
     public ResponseEntity<?> resourceNotFoundException(ResourceNotFoundException e) {
-        ResponseData response = ResponseData.builder()
+        ResponseData<Void> response = ResponseData.<Void>builder()
                 .message(e.getMessage())
                 .data(null)
                 .build();
@@ -103,7 +103,7 @@ public class GlobalException {
                 .map(fieldError -> fieldError.getDefaultMessage())
                 .orElse("Dữ liệu không hợp lệ.");
 
-        ResponseData response = ResponseData.builder()
+        ResponseData<Void> response = ResponseData.<Void>builder()
                 .message(errorMessage)
                 .data(null)
                 .build();
@@ -113,7 +113,7 @@ public class GlobalException {
 
     @ExceptionHandler(value = AccessDeniedException.class)
     public ResponseEntity<?> handleAccessDeniedException(AccessDeniedException e) {
-        ResponseData response = ResponseData.builder()
+        ResponseData<Void> response = ResponseData.<Void>builder()
                 .message("Bạn không có quyền truy cập chức năng này.")
                 .data(null)
                 .build();
@@ -123,7 +123,7 @@ public class GlobalException {
 
     @ExceptionHandler(value = ForbiddenException.class)
     public ResponseEntity<?> forbiddenException(ForbiddenException e) {
-        ResponseData response =ResponseData.builder()
+        ResponseData<Void> response = ResponseData.<Void>builder()
                 .message("Bạn không có quyền truy cập chức năng này.")
                 .data(null)
                 .build();
@@ -133,7 +133,7 @@ public class GlobalException {
 
     @ExceptionHandler(value = DuplicateResourceException.class)
     public ResponseEntity<?> duplicateResourceException(DuplicateResourceException e) {
-        ResponseData response = ResponseData.builder()
+        ResponseData<Void> response = ResponseData.<Void>builder()
                 .message(e.getMessage())
                 .data(null)
                 .build();
@@ -155,7 +155,7 @@ public class GlobalException {
             userFriendlyMessage = "Lỗi ràng buộc dữ liệu! unique constraint";
         }
 
-        ResponseData response = ResponseData.builder()
+        ResponseData<Void> response = ResponseData.<Void>builder()
                 .message(userFriendlyMessage)
                 .data(null)
                 .build();
