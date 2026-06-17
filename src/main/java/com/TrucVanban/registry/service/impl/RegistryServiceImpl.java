@@ -7,6 +7,7 @@ import com.TrucVanban.registry.entity.Organization;
 import com.TrucVanban.registry.entity.SlaConfiguration;
 import com.TrucVanban.registry.enums.CertificateStatus;
 import com.TrucVanban.registry.enums.OrganizationStatus;
+import com.TrucVanban.registry.enums.SlaStatus;
 import com.TrucVanban.registry.mapper.OrganizationMapper;
 import com.TrucVanban.registry.mapper.SlaConfigMapper;
 import com.TrucVanban.registry.repository.CertificateRepository;
@@ -20,6 +21,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDateTime;
 
 @Slf4j
 @Service
@@ -134,5 +137,34 @@ public class RegistryServiceImpl implements RegistryService {
 
         log.info("Cập nhật SLA thành công: priority={}, maxHours={}", documentPriority, request.getMaxReceiveHours());
         return slaConfigMapper.toResponse(slaConfig);
+    }
+
+    //not for api
+    @Override
+    public Long getOrganizationIdByCode(String code) {
+        Organization organization = organizationRepository.findByCode(code)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy tổ chức với mã: " + code));
+        return organization.getId();
+    }
+
+    @Override
+    public String getOrganizationNameById(Long id) {
+        Organization organization = organizationRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy tổ chức với id: " + id));
+        return organization.getName();
+    }
+
+    @Override
+    public boolean checkCertificate(String signature, Long organizationId) {
+        return certificateRepository.findByOrganizationIdAndStatus(organizationId, CertificateStatus.ACTIVE)
+                .map(cert -> !LocalDateTime.now().isAfter(cert.getExpiredAt()) && cert.getPublicKey().equals(signature))
+                .orElse(false);
+    }
+
+    @Override
+    public Integer getMaxReceiveHoursByPriority(Integer documentPriority) {
+        return slaConfigurationRepository.findByDocumentPriorityAndStatus(documentPriority, SlaStatus.ACTIVE)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy cấu hình SLA cho ưu tiên: " + documentPriority))
+                .getMaxReceiveHours();
     }
 }
