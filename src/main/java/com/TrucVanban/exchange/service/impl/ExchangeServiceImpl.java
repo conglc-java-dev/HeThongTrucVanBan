@@ -1,13 +1,13 @@
 package com.TrucVanban.exchange.service.impl;
 
-import com.TrucVanban.exchange.dto.command.DocumentCreateCommand;
-import com.TrucVanban.exchange.dto.command.DocumentVersionCreateCommand;
-import com.TrucVanban.exchange.dto.command.ExchangeTransactionCreateCommand;
+import com.TrucVanban.exchange.dto.request.receive.ReceiveDocumentRequest;
 import com.TrucVanban.exchange.dto.request.send.ExchangeDocumentRequest;
-import com.TrucVanban.exchange.dto.response.SenderDocumentResponse;
+import com.TrucVanban.exchange.dto.response.ExchangeDocumentResponse;
+import com.TrucVanban.exchange.dto.response.ReceiveDocumentResponse;
 import com.TrucVanban.exchange.entity.Document;
 import com.TrucVanban.exchange.entity.DocumentVersion;
 import com.TrucVanban.exchange.entity.ExchangeTransactions;
+import com.TrucVanban.exchange.enums.DocumentStatus;
 import com.TrucVanban.exchange.enums.SignatureStatus;
 import com.TrucVanban.exchange.enums.TransactionStatus;
 import com.TrucVanban.exchange.mapper.DocumentMapper;
@@ -55,7 +55,7 @@ public class ExchangeServiceImpl implements ExchangeService {
 
     @Override
     @Transactional
-    public List<SenderDocumentResponse> exchangeDocument(ExchangeDocumentRequest request) {
+    public List<ExchangeDocumentResponse> exchangeDocument(ExchangeDocumentRequest request) {
         log.info("[exchangeDocument] Bắt đầu gửi văn bản: sender={}, receivers={}", request.getSenderCode(), request.getReceiverCodes());
 
         Long senderId = registryService.getOrganizationIdByCode(request.getSenderCode());
@@ -66,36 +66,35 @@ public class ExchangeServiceImpl implements ExchangeService {
 //        if (!registryService.checkCertificate(request.getSignature(), senderId))
 //            throw new ForbiddenException("Certificate is not valid");
 
-        if(documentRepository.existsDocumentByDocumentCode(request.getDocumentCode())){
+        if (documentRepository.existsDocumentByDocumentCode(request.getDocumentCode())) {
             throw new RuntimeException("Mã văn bản đã tồn tại: " + request.getDocumentCode());
         }
-        DocumentCreateCommand documentCreateCommand = documentMapper.toDocumentCreateCommand(request);
-        documentCreateCommand.setSenderOrgId(senderId);
-        Document document = Document.of(documentCreateCommand);
+
+        Document document = documentMapper.toDocument(request);
+        document.setSenderOrgId(senderId);
         document = documentRepository.saveAndFlush(document);
         log.info("[exchangeDocument] Lưu document thành công: documentId={}, code={}", document.getId(), document.getDocumentCode());
 
-        List<SenderDocumentResponse> senderDocumentResponses = new ArrayList<>();
+        List<ExchangeDocumentResponse> exchangeDocumentResponses = new ArrayList<>();
         for (Long receiverId : receiverIds) {
             String transactionCode = "TXN-" + Year.now().getValue() + "-" + document.getId() + "-" + receiverId;
             Integer priority = NumberUtils.isNullOrNegative(request.getPriority()) ? 0 : request.getPriority();
 
-            ExchangeTransactionCreateCommand command = ExchangeTransactionCreateCommand.builder()
-                    .transactionCode(transactionCode)
-                    .documentId(document.getId())
-                    .senderOrgId(senderId)
-                    .receiverOrgId(receiverId)
-                    .priority(priority)
-                    .currentStatus(TransactionStatus.RECEIVED)
-                    .signatureStatus(SignatureStatus.PENDING)
-                    .slaDeadline(LocalDateTime.now().plusHours(registryService.getMaxReceiveHoursByPriority(priority)))
-                    .build();
+            ExchangeTransactions transaction = new ExchangeTransactions();
+            transaction.setTransactionCode(transactionCode);
+            transaction.setDocumentId(document.getId());
+            transaction.setSenderOrgId(senderId);
+            transaction.setReceiverOrgId(receiverId);
+            transaction.setPriority(priority);
+            transaction.setCurrentStatus(TransactionStatus.RECEIVED);
+            transaction.setSignatureStatus(SignatureStatus.PENDING);
+            transaction.setSlaDeadline(LocalDateTime.now().plusHours(registryService.getMaxReceiveHoursByPriority(priority)));
 
-            exchangeTransactionsRepository.save(ExchangeTransactions.of(command));
+            exchangeTransactionsRepository.save(transaction);
             log.info("[exchangeDocument] Tạo transaction: code={}, receiverId={}, priority={}", transactionCode, receiverId, priority);
 
-            senderDocumentResponses.add(
-                    SenderDocumentResponse.builder()
+            exchangeDocumentResponses.add(
+                    ExchangeDocumentResponse.builder()
                             .transactionCode(transactionCode)
                             .currentStatus(TransactionStatus.RECEIVED)
                             .build()
@@ -110,26 +109,24 @@ public class ExchangeServiceImpl implements ExchangeService {
                     .orElse(null);
             Integer versionNo = existDocumentVersion != null ? existDocumentVersion.getVersionNo() + 1 : 1;
 
-            DocumentVersionCreateCommand documentVersionCreateCommand = DocumentVersionCreateCommand.builder()
-                    .documentId(document.getId())
-                    .versionNo(versionNo)
-                    .storagePath(url)
-                    .checksum(calculateFileSHA256(request.getPayLoad()))
-                    .fileSize(request.getPayLoad().getSize())
-                    .createdBy(registryService.getOrganizationNameById(senderId))
-                    .build();
+            DocumentVersion documentVersion = new DocumentVersion();
+            documentVersion.setDocumentId(document.getId());
+            documentVersion.setVersionNo(versionNo);
+            documentVersion.setStoragePath(url);
+            documentVersion.setChecksum(calculateFileSHA256(request.getPayLoad()));
+            documentVersion.setFileSize(request.getPayLoad().getSize());
+            documentVersion.setCreatedBy(registryService.getOrganizationNameById(senderId));
 
-            DocumentVersion documentVersion = DocumentVersion.of(documentVersionCreateCommand);
             documentVersionRepository.save(documentVersion);
             log.info("[exchangeDocument] Lưu document version thành công: documentId={}, version={}", document.getId(), versionNo);
 
         } catch (Throwable e) {
             log.error("[exchangeDocument] Lỗi lưu document version: documentId={}, error={}", document.getId(), e.getMessage(), e);
-            minioService.deleteByUrl(url);
+            if (url != null) minioService.deleteByUrl(url);
         }
 
         log.info("[exchangeDocument] Hoàn thành gửi văn bản: documentId={}, số nơi nhận={}", document.getId(), receiverIds.size());
-        return senderDocumentResponses;
+        return exchangeDocumentResponses;
     }
 
     private String calculateFileSHA256(MultipartFile file) {
@@ -144,5 +141,10 @@ public class ExchangeServiceImpl implements ExchangeService {
         } catch (NoSuchAlgorithmException | IOException e) {
             throw new RuntimeException("Không thể tính SHA-256: " + e.getMessage(), e);
         }
+    }
+
+    @Override
+    public ReceiveDocumentResponse ackDocument(ReceiveDocumentRequest request) {
+        return null;
     }
 }

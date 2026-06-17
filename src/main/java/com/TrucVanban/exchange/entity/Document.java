@@ -1,15 +1,9 @@
 package com.TrucVanban.exchange.entity;
 
-import com.TrucVanban.exchange.dto.command.DocumentCreateCommand;
 import com.TrucVanban.exchange.enums.DocumentStatus;
-import com.TrucVanban.shared.utils.NumberUtils;
-import com.TrucVanban.shared.utils.StringUtils;
 import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
+import lombok.*;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -20,6 +14,7 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 @Getter
+@Setter
 @Builder
 public class Document {
 
@@ -74,25 +69,5 @@ public class Document {
     @PreUpdate
     protected void onUpdate() {
         updatedAt = LocalDateTime.now();
-    }
-
-    public static Document of(DocumentCreateCommand command){
-
-        if(command == null) throw new IllegalArgumentException("Command must not be null");
-        if(StringUtils.isNullOrBlank(command.getDocumentCode())) throw new IllegalArgumentException("Document code must not be null or empty");
-        if(NumberUtils.isNullOrNegative(command.getSenderOrgId())) throw new IllegalArgumentException("SenderOrgId must be a positive number");
-
-        return Document.builder()
-                .documentCode(command.getDocumentCode())
-                .title(command.getTitle())
-                .summary(command.getSummary())
-                .extractedMetadata(command.getExtractedMetadata())
-                .senderOrgId(command.getSenderOrgId())
-                .documentType(command.getDocumentType())
-                .currentVersion(NumberUtils.isNullOrNegative(command.getCurrentVersion())
-                        ? 1 : command.getCurrentVersion())
-                .status(DocumentStatus.ACTIVE)
-                .build();
-
     }
 }

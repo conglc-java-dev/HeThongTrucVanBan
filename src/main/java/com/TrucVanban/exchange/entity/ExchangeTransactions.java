@@ -1,14 +1,9 @@
 package com.TrucVanban.exchange.entity;
 
-import com.TrucVanban.exchange.dto.command.ExchangeTransactionCreateCommand;
-import com.TrucVanban.shared.utils.NumberUtils;
-import com.TrucVanban.shared.utils.StringUtils;
 import com.TrucVanban.exchange.enums.SignatureStatus;
 import com.TrucVanban.exchange.enums.TransactionStatus;
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.NoArgsConstructor;
+import lombok.*;
 
 import java.time.LocalDateTime;
 
@@ -16,6 +11,8 @@ import java.time.LocalDateTime;
 @Table(name = "exchange_transactions")
 @NoArgsConstructor
 @AllArgsConstructor
+@Getter
+@Setter
 @Builder
 public class ExchangeTransactions {
 
@@ -69,26 +66,4 @@ public class ExchangeTransactions {
     protected void onUpdate() {
         updatedAt = LocalDateTime.now();
     }
-
-    public static ExchangeTransactions of(ExchangeTransactionCreateCommand command) {
-
-        if(command == null) throw new IllegalArgumentException("Command must not be null");
-        if(StringUtils.isNullOrBlank(command.getTransactionCode())) throw new IllegalArgumentException("Transaction code must not be null or empty");
-        if(NumberUtils.isNullOrNegative(command.getDocumentId())) throw new IllegalArgumentException("Document ID must be a positive number");
-        if(NumberUtils.isNullOrNegative(command.getSenderOrgId())) throw new IllegalArgumentException("Sender organization ID must be a positive number");
-        if(NumberUtils.isNullOrNegative(command.getReceiverOrgId())) throw new IllegalArgumentException("Receiver organization ID must be a positive number");
-        if(NumberUtils.isNullOrNegative(command.getPriority())) throw new IllegalArgumentException("Priority must be a non-negative integer");
-
-        return ExchangeTransactions.builder()
-                .transactionCode(command.getTransactionCode())
-                .documentId(command.getDocumentId())
-                .senderOrgId(command.getSenderOrgId())
-                .receiverOrgId(command.getReceiverOrgId())
-                .priority(command.getPriority())
-                .currentStatus(command.getCurrentStatus())
-                .signatureStatus(command.getSignatureStatus())
-                .slaDeadline(command.getSlaDeadline())
-                .build();
-    }
-
 }

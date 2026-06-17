@@ -9,24 +9,30 @@ import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "document_replacements")
+@Table(name = "status_histories")
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class DocumentReplacement {
+public class StatusHistory {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "replacement_document_id", nullable = false)
-    private Long replacementDocumentId;
+    @Column(name = "transaction_id", nullable = false)
+    private Long transactionId;
 
-    @Column(name = "replaced_document_id", nullable = false)
-    private Long replacedDocumentId;
+    @Column(name = "actor_org_id")
+    private Long actorOrgId;
+
+    @Column(name = "status_code", nullable = false, length = 2)
+    private String statusCode;
 
     @Column(columnDefinition = "TEXT")
-    private String reason;
+    private String note;
+
+    @Column(name = "changed_by", length = 100)
+    private String changedBy;
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;

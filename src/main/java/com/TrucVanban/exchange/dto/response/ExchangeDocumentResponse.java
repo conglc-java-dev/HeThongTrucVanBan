@@ -6,7 +6,7 @@ import lombok.Data;
 
 @Data
 @Builder
-public class SenderDocumentResponse {
+public class ExchangeDocumentResponse {
     private String transactionCode;
     private TransactionStatus currentStatus;
 }
