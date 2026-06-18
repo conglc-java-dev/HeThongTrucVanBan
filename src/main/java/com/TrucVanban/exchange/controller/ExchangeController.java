@@ -3,8 +3,12 @@ package com.TrucVanban.exchange.controller;
 import com.TrucVanban.exchange.dto.request.receive.ReceiveDocumentRequest;
 import com.TrucVanban.exchange.dto.request.send.ExchangeDocumentRequest;
 import com.TrucVanban.exchange.dto.response.ExchangeDocumentResponse;
+import com.TrucVanban.exchange.dto.response.ReceiveDocumentResponse;
+import com.TrucVanban.exchange.dto.response.TransactionReceivedStatusResponse;
+import com.TrucVanban.exchange.dto.response.TransactionSendStatusResponse;
 import com.TrucVanban.exchange.service.ExchangeService;
 import com.TrucVanban.shared.ResponseData;
+import com.TrucVanban.shared.utils.ListUtils;
 import jakarta.validation.Valid;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
@@ -36,12 +40,47 @@ public class ExchangeController {
     }
 
     @PostMapping(value = "/ack")
-    public ResponseEntity<ResponseData<String>> ack(@RequestBody ReceiveDocumentRequest request) {
-        ResponseData<String> response = ResponseData.<String>builder()
+    public ResponseEntity<ResponseData<ReceiveDocumentResponse>> ack(@RequestBody @Valid ReceiveDocumentRequest request) {
+        ReceiveDocumentResponse data = exchangeService.ackDocument(request);
+        ResponseData<ReceiveDocumentResponse> response = ResponseData.<ReceiveDocumentResponse>builder()
                 .success(true)
                 .message("Ghi nhận trạng thái ACK thành công")
+                .data(data)
                 .build();
 
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping(value = "{senderCode}/transactions/sended/{transactionCode}")
+    public ResponseEntity<ResponseData<TransactionSendStatusResponse>> getTransactionSendStatus(@PathVariable String senderCode,
+                                                                                                @PathVariable String transactionCode) {
+        TransactionSendStatusResponse data = exchangeService.getTransactionStatus(senderCode, transactionCode);
+        ResponseData<TransactionSendStatusResponse> response = ResponseData.<TransactionSendStatusResponse>builder()
+                .success(true)
+                .message("Hoành thành lấy thông tin trạng thái giao dịch đã được gửi đi")
+                .data(data)
+                .build();
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping(value = "{receiverCode}/transactions/received")
+    public ResponseEntity<ResponseData<?>> getTransactionReceivedStatus(@PathVariable String receiverCode) {
+        List<TransactionReceivedStatusResponse> data = exchangeService.getTransactionReceivedStatus(receiverCode);
+
+        if(ListUtils.isNullOrEmpty(data)){
+            ResponseData<?> response = ResponseData.<Object>builder()
+                    .success(true)
+                    .message("Không có giao dịch nào được nhận")
+                    .data(null)
+                    .build();
+            return ResponseEntity.ok(response);
+        }
+
+        ResponseData<List<TransactionReceivedStatusResponse>> response = ResponseData.<List<TransactionReceivedStatusResponse>>builder()
+                .success(true)
+                .message("Hoành thành lấy danh sách thông tin trạng thái của các giao dịch đã nhận được")
+                .data(data)
+                .build();
         return ResponseEntity.ok(response);
     }
 }

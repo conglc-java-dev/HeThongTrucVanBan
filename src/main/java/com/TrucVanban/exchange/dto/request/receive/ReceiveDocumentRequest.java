@@ -1,5 +1,6 @@
 package com.TrucVanban.exchange.dto.request.receive;
 
+import com.TrucVanban.exchange.enums.BusinessStatusCode;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
@@ -12,11 +13,14 @@ public class ReceiveDocumentRequest {
     @NotBlank(message = "Transaction code is required")
     private String transactionCode;
 
-    @NotNull(message = "Receiver code is required")
-    private Long receiverCode;
+    @NotBlank(message = "Receiver code is required")
+    private String receiverCode;
 
-    @NotBlank(message = "Business status code is required")
-    private String businessStatusCode;
+    @NotNull(message = "Business status code is required")
+    private BusinessStatusCode businessStatusCode;
     private String statusReason;
+    private LocalDateTime receivedAt;
     private LocalDateTime processedAt;
+    private String note;
+    private String changedBy;
 }
