@@ -16,4 +16,12 @@ public interface RegistryService {
     OrganizationDetailResponse getOrganizationDetail(String code);
 
     UpdateSlaConfigResponse updateSlaConfig(Integer documentPriority, UpdateSlaConfigRequest request);
+
+    Long getOrganizationIdByCode(String code);
+
+    String getOrganizationNameById(Long id);
+
+    Integer getMaxReceiveHoursByPriority(Integer documentPriority);
+
+    boolean checkCertificate(String signature, Long organizationId);
 }
