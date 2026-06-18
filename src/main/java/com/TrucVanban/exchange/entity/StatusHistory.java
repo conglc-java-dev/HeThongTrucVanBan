@@ -1,10 +1,8 @@
 package com.TrucVanban.exchange.entity;
 
+import com.TrucVanban.exchange.enums.BusinessStatusCode;
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import lombok.*;
 
 import java.time.LocalDateTime;
 
@@ -13,6 +11,8 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
+@Setter
+@Getter
 public class StatusHistory {
 
     @Id
@@ -26,7 +26,7 @@ public class StatusHistory {
     private Long actorOrgId;
 
     @Column(name = "status_code", nullable = false, length = 2)
-    private String statusCode;
+    private BusinessStatusCode statusCode;
 
     @Column(columnDefinition = "TEXT")
     private String note;

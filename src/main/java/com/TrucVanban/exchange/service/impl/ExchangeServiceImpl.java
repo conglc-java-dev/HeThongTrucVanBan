@@ -4,21 +4,20 @@ import com.TrucVanban.exchange.dto.request.receive.ReceiveDocumentRequest;
 import com.TrucVanban.exchange.dto.request.send.ExchangeDocumentRequest;
 import com.TrucVanban.exchange.dto.response.ExchangeDocumentResponse;
 import com.TrucVanban.exchange.dto.response.ReceiveDocumentResponse;
-import com.TrucVanban.exchange.entity.Document;
-import com.TrucVanban.exchange.entity.DocumentVersion;
-import com.TrucVanban.exchange.entity.ExchangeTransactions;
-import com.TrucVanban.exchange.enums.DocumentStatus;
+import com.TrucVanban.exchange.dto.response.TransactionReceivedStatusResponse;
+import com.TrucVanban.exchange.dto.response.TransactionSendStatusResponse;
+import com.TrucVanban.exchange.entity.*;
 import com.TrucVanban.exchange.enums.SignatureStatus;
 import com.TrucVanban.exchange.enums.TransactionStatus;
 import com.TrucVanban.exchange.mapper.DocumentMapper;
-import com.TrucVanban.exchange.repository.DocumentReplacementRepository;
-import com.TrucVanban.exchange.repository.DocumentRepository;
-import com.TrucVanban.exchange.repository.DocumentVersionRepository;
-import com.TrucVanban.exchange.repository.ExchangeTransactionsRepository;
+import com.TrucVanban.exchange.repository.*;
 import com.TrucVanban.exchange.service.ExchangeService;
 import com.TrucVanban.registry.service.RegistryService;
 import com.TrucVanban.routing.dto.request.RoutingRequest;
 import com.TrucVanban.shared.config.RabbitMQConfig;
+import com.TrucVanban.shared.exception.DuplicateResourceException;
+import com.TrucVanban.shared.exception.ForbiddenException;
+import com.TrucVanban.shared.exception.ResourceNotFoundException;
 import com.TrucVanban.shared.utils.NumberUtils;
 import com.TrucVanban.storage.service.MinioService;
 import lombok.AccessLevel;
@@ -58,6 +57,9 @@ public class ExchangeServiceImpl implements ExchangeService {
     DocumentVersionRepository documentVersionRepository;
     DocumentReplacementRepository documentReplacementRepository;
     RabbitTemplate rabbitTemplate;
+//    DocumentReplacementRepository documentReplacementRepository;
+    DocumentReceiverRepository documentReceiverRepository;
+    StatusHistoryRepository statusHistoryRepository;
 
     @Override
     @Transactional
@@ -73,7 +75,7 @@ public class ExchangeServiceImpl implements ExchangeService {
 //            throw new ForbiddenException("Certificate is not valid");
 
         if (documentRepository.existsDocumentByDocumentCode(request.getDocumentCode())) {
-            throw new RuntimeException("Mã văn bản đã tồn tại: " + request.getDocumentCode());
+            throw new DuplicateResourceException("Mã văn bản đã tồn tại: " + request.getDocumentCode());
         }
 
         Document document = documentMapper.toDocument(request);
@@ -181,7 +183,72 @@ public class ExchangeServiceImpl implements ExchangeService {
     }
 
     @Override
+    @Transactional
     public ReceiveDocumentResponse ackDocument(ReceiveDocumentRequest request) {
-        return null;
+        Long receiverId = registryService.getOrganizationIdByCode(request.getReceiverCode());
+        ExchangeTransactions transaction = exchangeTransactionsRepository.findByTransactionCodeAndCurrentStatus(request.getTransactionCode(), TransactionStatus.DELIVERED)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy giao dịch đã được luân chuyển có code: " + request.getTransactionCode()));
+        if (!receiverId.equals(transaction.getReceiverOrgId())) {
+            throw new ForbiddenException("Bạn không có quyền ghi nhận văn bản này");
+        }
+
+        DocumentReceiver receiver = documentMapper.toDocumentReceiver(request);
+        receiver.setDocumentId(transaction.getDocumentId());
+        receiver.setReceiverOrgId(receiverId);
+        documentReceiverRepository.save(receiver);
+
+        StatusHistory statusHistory = documentMapper.toStatusHistory(request);
+        statusHistory.setTransactionId(transaction.getId());
+        statusHistory.setActorOrgId(receiverId);
+        statusHistoryRepository.save(statusHistory);
+
+        return ReceiveDocumentResponse.builder()
+                .transactionCode(request.getTransactionCode())
+                .businessStatusCode(receiver.getBusinessStatusCode())
+                .build();
     }
+
+    @Override
+    @Transactional(readOnly = true)
+    //chưa có bảng lưu lịch sử transaction status
+    public TransactionSendStatusResponse getTransactionStatus(String senderCode, String transactionCode) {
+        Long senderId = registryService.getOrganizationIdByCode(senderCode);
+        ExchangeTransactions transaction = exchangeTransactionsRepository.findByTransactionCode(transactionCode)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy giao dịch có code: " + transactionCode));
+
+        if (!senderId.equals(transaction.getSenderOrgId()))
+            throw new ForbiddenException("Bạn không có quyền xem giao dịch này");
+
+        return documentMapper.toTransactionStatusResponse(transaction);
+    }
+
+    @Override
+    public List<TransactionReceivedStatusResponse> getTransactionReceivedStatus(String receiverCode) {
+        Long receiverId = registryService.getOrganizationIdByCode(receiverCode);
+        List<ExchangeTransactions> transaction = exchangeTransactionsRepository.findByReceiverOrgId(receiverId);
+
+        if (transaction.isEmpty()) return null;
+
+        return transaction.stream().map(t -> {
+                    List<StatusHistory> statusHistories = statusHistoryRepository.findByTransactionIdOrderByCreatedAtDesc(t.getId());
+                    List<TransactionReceivedStatusResponse.timeline> timelines = new ArrayList<>(statusHistories.stream()
+                            .map(sh -> TransactionReceivedStatusResponse.timeline.builder()
+                                    .time(sh.getCreatedAt())
+                                    .status(sh.getStatusCode().getCode())
+                                    .build())
+                            .toList());
+                    timelines.addFirst(TransactionReceivedStatusResponse.timeline.builder()
+                            .time(t.getCreatedAt())
+                            .status(t.getCurrentStatus().name())
+                            .build());
+                    return TransactionReceivedStatusResponse.builder()
+                            .transactionCode(t.getTransactionCode())
+                            .timeline(timelines)
+                            .build();
+                })
+                .toList();
+
+    }
+
+
 }
