@@ -80,15 +80,16 @@ public class ExchangeServiceImpl implements ExchangeService {
             String transactionCode = "TXN-" + Year.now().getValue() + "-" + document.getId() + "-" + receiverId;
             Integer priority = NumberUtils.isNullOrNegative(request.getPriority()) ? 0 : request.getPriority();
 
-            ExchangeTransactions transaction = new ExchangeTransactions();
-            transaction.setTransactionCode(transactionCode);
-            transaction.setDocumentId(document.getId());
-            transaction.setSenderOrgId(senderId);
-            transaction.setReceiverOrgId(receiverId);
-            transaction.setPriority(priority);
-            transaction.setCurrentStatus(TransactionStatus.RECEIVED);
-            transaction.setSignatureStatus(SignatureStatus.PENDING);
-            transaction.setSlaDeadline(LocalDateTime.now().plusHours(registryService.getMaxReceiveHoursByPriority(priority)));
+            ExchangeTransactions transaction = ExchangeTransactions.builder()
+                    .transactionCode(transactionCode)
+                    .documentId(document.getId())
+                    .senderOrgId(senderId)
+                    .receiverOrgId(receiverId)
+                    .priority(priority)
+                    .currentStatus(TransactionStatus.RECEIVED)
+                    .signatureStatus(SignatureStatus.PENDING)
+                    .slaDeadline(LocalDateTime.now().plusHours(registryService.getMaxReceiveHoursByPriority(priority)))
+                    .build();
 
             exchangeTransactionsRepository.save(transaction);
             log.info("[exchangeDocument] Tạo transaction: code={}, receiverId={}, priority={}", transactionCode, receiverId, priority);
@@ -109,13 +110,14 @@ public class ExchangeServiceImpl implements ExchangeService {
                     .orElse(null);
             Integer versionNo = existDocumentVersion != null ? existDocumentVersion.getVersionNo() + 1 : 1;
 
-            DocumentVersion documentVersion = new DocumentVersion();
-            documentVersion.setDocumentId(document.getId());
-            documentVersion.setVersionNo(versionNo);
-            documentVersion.setStoragePath(url);
-            documentVersion.setChecksum(calculateFileSHA256(request.getPayLoad()));
-            documentVersion.setFileSize(request.getPayLoad().getSize());
-            documentVersion.setCreatedBy(registryService.getOrganizationNameById(senderId));
+            DocumentVersion documentVersion = DocumentVersion.builder()
+                    .documentId(document.getId())
+                    .versionNo(versionNo)
+                    .storagePath(url)
+                    .checksum(calculateFileSHA256(request.getPayLoad()))
+                    .fileSize(request.getPayLoad().getSize())
+                    .createdBy(registryService.getOrganizationNameById(senderId))
+                    .build();
 
             documentVersionRepository.save(documentVersion);
             log.info("[exchangeDocument] Lưu document version thành công: documentId={}, version={}", document.getId(), versionNo);
