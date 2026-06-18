@@ -1,10 +1,8 @@
 package com.TrucVanban.exchange.entity;
 
+import com.TrucVanban.exchange.enums.BusinessStatusCode;
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import lombok.*;
 
 import java.time.LocalDateTime;
 
@@ -12,6 +10,8 @@ import java.time.LocalDateTime;
 @Table(name = "document_receivers")
 @NoArgsConstructor
 @AllArgsConstructor
+@Setter
+@Getter
 @Builder
 public class DocumentReceiver {
 
@@ -26,7 +26,7 @@ public class DocumentReceiver {
     private Long receiverOrgId;
 
     @Column(name = "business_status_code", nullable = false, length = 2)
-    private String businessStatusCode;
+    private BusinessStatusCode businessStatusCode;
 
     @Column(name = "status_reason", columnDefinition = "TEXT")
     private String statusReason;
