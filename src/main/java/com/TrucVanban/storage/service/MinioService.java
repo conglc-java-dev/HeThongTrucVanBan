@@ -7,5 +7,7 @@ public interface MinioService {
 
     String getPresignedUrl(String objectName);
 
+    byte[] download(String objectName);
+
     void deleteByUrl(String url);
 }

@@ -17,13 +17,18 @@ import com.TrucVanban.exchange.repository.DocumentVersionRepository;
 import com.TrucVanban.exchange.repository.ExchangeTransactionsRepository;
 import com.TrucVanban.exchange.service.ExchangeService;
 import com.TrucVanban.registry.service.RegistryService;
+import com.TrucVanban.routing.dto.request.RoutingRequest;
+import com.TrucVanban.shared.config.RabbitMQConfig;
 import com.TrucVanban.shared.utils.NumberUtils;
 import com.TrucVanban.storage.service.MinioService;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -52,6 +57,7 @@ public class ExchangeServiceImpl implements ExchangeService {
     ExchangeTransactionsRepository exchangeTransactionsRepository;
     DocumentVersionRepository documentVersionRepository;
     DocumentReplacementRepository documentReplacementRepository;
+    RabbitTemplate rabbitTemplate;
 
     @Override
     @Transactional
@@ -91,8 +97,9 @@ public class ExchangeServiceImpl implements ExchangeService {
                     .slaDeadline(LocalDateTime.now().plusHours(registryService.getMaxReceiveHoursByPriority(priority)))
                     .build();
 
-            exchangeTransactionsRepository.save(transaction);
+            transaction = exchangeTransactionsRepository.save(transaction);
             log.info("[exchangeDocument] Tạo transaction: code={}, receiverId={}, priority={}", transactionCode, receiverId, priority);
+//            publishRoutingMessageAfterCommit(transaction);
 
             exchangeDocumentResponses.add(
                     ExchangeDocumentResponse.builder()
@@ -106,7 +113,7 @@ public class ExchangeServiceImpl implements ExchangeService {
         try {
             url = minioService.upload(request.getPayLoad());
 
-            DocumentVersion existDocumentVersion = documentVersionRepository.findMaxVersionNoByDocumentId(document.getId())
+            DocumentVersion existDocumentVersion = documentVersionRepository.findTopByDocumentIdOrderByVersionNoDesc(document.getId())
                     .orElse(null);
             Integer versionNo = existDocumentVersion != null ? existDocumentVersion.getVersionNo() + 1 : 1;
 
@@ -125,10 +132,38 @@ public class ExchangeServiceImpl implements ExchangeService {
         } catch (Throwable e) {
             log.error("[exchangeDocument] Lỗi lưu document version: documentId={}, error={}", document.getId(), e.getMessage(), e);
             if (url != null) minioService.deleteByUrl(url);
+            throw new RuntimeException("Không thể lưu file lên MinIO: " + e.getMessage(), e);
         }
 
         log.info("[exchangeDocument] Hoàn thành gửi văn bản: documentId={}, số nơi nhận={}", document.getId(), receiverIds.size());
         return exchangeDocumentResponses;
+    }
+
+    private void publishRoutingMessageAfterCommit(ExchangeTransactions transaction) {
+        RoutingRequest routingRequest = RoutingRequest.builder()
+                .transactionCode(transaction.getTransactionCode())
+                .build();
+
+        Runnable publishTask = () -> {
+            rabbitTemplate.convertAndSend(
+                    RabbitMQConfig.DOCUMENT_EXCHANGE,
+                    RabbitMQConfig.DOCUMENT_EXCHANGE_ROUTING_KEY,
+                    routingRequest
+            );
+            log.info("[exchangeDocument] Đã publish routing message: transactionCode={}", transaction.getTransactionCode());
+        };
+
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    publishTask.run();
+                }
+            });
+            return;
+        }
+
+        publishTask.run();
     }
 
     private String calculateFileSHA256(MultipartFile file) {

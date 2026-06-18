@@ -57,6 +57,18 @@ public class MinioServiceImpl implements MinioService {
     }
 
     @Override
+    public byte[] download(String objectName) {
+        try (var stream = minioClient.getObject(GetObjectArgs.builder()
+                .bucket(bucketName)
+                .object(objectName)
+                .build())) {
+            return stream.readAllBytes();
+        } catch (MinioException | IOException | InvalidKeyException | NoSuchAlgorithmException e) {
+            throw new RuntimeException("Tải file từ MinIO thất bại: " + e.getMessage(), e);
+        }
+    }
+
+    @Override
     public void deleteByUrl(String url) {
         try {
             String path = new java.net.URI(url).getPath();

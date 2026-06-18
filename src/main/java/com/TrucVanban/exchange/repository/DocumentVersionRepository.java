@@ -6,5 +6,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.Optional;
 
 public interface DocumentVersionRepository extends JpaRepository<DocumentVersion, Long> {
-    Optional<DocumentVersion> findMaxVersionNoByDocumentId(Long documentId);
+    Optional<DocumentVersion> findTopByDocumentIdOrderByVersionNoDesc(Long documentId);
 }
