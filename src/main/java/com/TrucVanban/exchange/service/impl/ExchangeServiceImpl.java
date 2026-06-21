@@ -96,12 +96,12 @@ public class ExchangeServiceImpl implements ExchangeService {
                     .priority(priority)
                     .currentStatus(TransactionStatus.RECEIVED)
                     .signatureStatus(SignatureStatus.PENDING)
-                    .slaDeadline(LocalDateTime.now().plusHours(registryService.getMaxReceiveHoursByPriority(priority)))
+//                    .slaDeadline(LocalDateTime.now().plusHours(registryService.getMaxReceiveHoursByPriority(priority)))
                     .build();
 
             transaction = exchangeTransactionsRepository.save(transaction);
             log.info("[exchangeDocument] Tạo transaction: code={}, receiverId={}, priority={}", transactionCode, receiverId, priority);
-//            publishRoutingMessageAfterCommit(transaction);
+            publishRoutingMessageAfterCommit(transaction);
 
             exchangeDocumentResponses.add(
                     ExchangeDocumentResponse.builder()
