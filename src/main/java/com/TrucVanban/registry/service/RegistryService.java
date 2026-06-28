@@ -2,6 +2,7 @@ package com.TrucVanban.registry.service;
 
 import com.TrucVanban.registry.dto.request.*;
 import com.TrucVanban.registry.dto.response.*;
+import com.TrucVanban.registry.entity.Certificate;
 
 public interface RegistryService {
 
@@ -24,4 +25,6 @@ public interface RegistryService {
     Integer getMaxReceiveHoursByPriority(Integer documentPriority);
 
     boolean checkCertificate(String signature, Long organizationId);
+
+    Certificate findActiveCertificateBySerialNumber(String serialNumber);
 }

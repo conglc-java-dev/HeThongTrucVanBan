@@ -30,6 +30,36 @@ public class GlobalException {
         return ResponseEntity.badRequest().body(response); // 400
     }
 
+    /**
+     * Xử lý lỗi xác minh chữ ký số thất bại (Chốt 3 - Cryptographic Verification)
+     * HTTP 401 Unauthorized
+     */
+    @ExceptionHandler(value = SignatureVerificationException.class)
+    public ResponseEntity<?> handleSignatureVerificationException(SignatureVerificationException e) {
+        ResponseData<Void> response = ResponseData.<Void>builder()
+                .message(e.getMessage())
+                .success(false)
+                .data(null)
+                .build();
+        log.error("RESPONSE: {} - {}", response, e.getMessage());
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response); // 401
+    }
+
+    /**
+     * Xử lý lỗi Replay Attack phát hiện (Chốt 1 - Timestamp Check)
+     * HTTP 408 Request Timeout
+     */
+    @ExceptionHandler(value = ReplayAttackException.class)
+    public ResponseEntity<?> handleReplayAttackException(ReplayAttackException e) {
+        ResponseData<Void> response = ResponseData.<Void>builder()
+                .message(e.getMessage())
+                .success(false)
+                .data(null)
+                .build();
+        log.error("RESPONSE: {} - {}", response, e.getMessage());
+        return ResponseEntity.status(HttpStatus.REQUEST_TIMEOUT).body(response); // 408
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<?> handleUnknownException(Exception e, HttpServletRequest request) {
         log.error("handleUnknownException", e);
