@@ -12,6 +12,8 @@ import com.TrucVanban.registry.repository.OrganizationRepository;
 import com.TrucVanban.routing.dto.request.RoutingRequest;
 import com.TrucVanban.routing.dto.response.RoutingResponse;
 import com.TrucVanban.routing.service.RoutingService;
+import com.TrucVanban.shared.auth.filter.PartnerApiKeyAuthenticationFilter;
+import com.TrucVanban.shared.auth.service.SystemConfigService;
 import com.TrucVanban.shared.exception.ResourceNotFoundException;
 import com.TrucVanban.shared.exception.BusinessLogicException;
 import com.TrucVanban.storage.service.MinioService;
@@ -39,6 +41,7 @@ public class RoutingServiceImpl implements RoutingService {
     private final OrganizationRepository organizationRepository;
     private final MinioService minioService;
     private final RestClient restClient;
+    private final SystemConfigService systemConfigService;
 
     private record RoutingData(
             ExchangeTransactions transaction,
@@ -104,12 +107,14 @@ public class RoutingServiceImpl implements RoutingService {
 
     private void executeDispatch(RoutingData data, byte[] fileContent, String fileName) {
         Organization receiver = data.receiver();
+        String outboundApiKey = systemConfigService.getOutboundApiKey(receiver.getCode());
         log.info("[routing] Đang gửi tới endpoint: {}", receiver.getReceiveEndpoint());
 
         MultiValueMap<String, Object> body = buildMultipartBody(data, fileContent, fileName);
 
         ResponseEntity<String> response = restClient.post()
                 .uri(receiver.getReceiveEndpoint())
+                .header(PartnerApiKeyAuthenticationFilter.API_KEY_HEADER, outboundApiKey)
                 .contentType(MediaType.MULTIPART_FORM_DATA)
                 .body(body)
                 .retrieve()
