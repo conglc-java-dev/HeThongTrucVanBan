@@ -2,10 +2,10 @@ package com.TrucVanban.exchange.enums;
 
 public enum TransactionStatus {
     RECEIVED("Mới nhận"),
-    VALIDATED("Check chữ ký OK"),
+    VALIDATED("Request đã vượt qua bước kiểm tra hợp lệ"),
     ROUTED("Nằm trong Queue chờ bốc"),
     DISPATCHED("Đang gọi HTTP sang đích"),
-    DELIVERED("Thành công 200 OK"),
+    DELIVERED("Agency đích đã tiếp nhận thành công"),
     FAILED("Đứt mạng, Sập endpoint");
 
     public final String description;
