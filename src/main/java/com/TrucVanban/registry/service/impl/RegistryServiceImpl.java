@@ -24,6 +24,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 @Slf4j
 @Service
@@ -146,6 +149,29 @@ public class RegistryServiceImpl implements RegistryService {
         Organization organization = organizationRepository.findByCode(code)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy tổ chức với mã: " + code));
         return organization.getId();
+    }
+
+    @Override
+    public List<Long> getOrganizationIdsByCode(List<String> codes) {
+        if (codes == null || codes.isEmpty()) {
+            return List.of();
+        }
+
+        Map<String, Long> organizationIdsByCode = organizationRepository.findByCodeIn(codes).stream()
+                .collect(LinkedHashMap::new, (map, organization) -> map.put(organization.getCode(), organization.getId()), Map::putAll);
+
+        List<String> missingCodes = codes.stream()
+                .distinct()
+                .filter(code -> !organizationIdsByCode.containsKey(code))
+                .toList();
+
+        if (!missingCodes.isEmpty()) {
+            throw new ResourceNotFoundException("Không tìm thấy tổ chức với mã: " + String.join(", ", missingCodes));
+        }
+
+        return codes.stream()
+                .map(organizationIdsByCode::get)
+                .toList();
     }
 
     @Override

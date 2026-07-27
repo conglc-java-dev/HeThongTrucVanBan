@@ -4,6 +4,8 @@ import com.TrucVanban.registry.dto.request.*;
 import com.TrucVanban.registry.dto.response.*;
 import com.TrucVanban.registry.entity.Certificate;
 
+import java.util.List;
+
 public interface RegistryService {
 
     RegisterOrganizationResponse registerOrganization(RegisterOrganizationRequest request);
@@ -19,6 +21,8 @@ public interface RegistryService {
     UpdateSlaConfigResponse updateSlaConfig(Integer documentPriority, UpdateSlaConfigRequest request);
 
     Long getOrganizationIdByCode(String code);
+
+    List<Long> getOrganizationIdsByCode(List<String> codes);
 
     String getOrganizationNameById(Long id);
 
