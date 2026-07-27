@@ -58,15 +58,12 @@ public class ExchangeServiceImpl implements ExchangeService {
     public List<ExchangeDocumentResponse> exchangeDocument(ExchangeDocumentRequest request) {
         log.info("[exchangeDocument] Bắt đầu gửi văn bản: sender={}, receivers={}",
                 request.getSenderCode(), request.getReceiverCodes());
-
-        Long senderId = registryService.getOrganizationIdByCode(request.getSenderCode());
-        List<Long> receiverIds = request.getReceiverCodes().stream()
-                .map(registryService::getOrganizationIdByCode)
-                .toList();
-
         if (documentRepository.existsDocumentByDocumentCode(request.getDocumentCode())) {
             throw new DuplicateResourceException("Mã văn bản đã tồn tại: " + request.getDocumentCode());
         }
+
+        Long senderId = registryService.getOrganizationIdByCode(request.getSenderCode());
+        List<Long> receiverIds = registryService.getOrganizationIdsByCode(request.getReceiverCodes());
 
         // Lưu Document
         Document document = documentMapper.toDocument(request);
@@ -95,10 +92,12 @@ public class ExchangeServiceImpl implements ExchangeService {
         log.info("[exchangeDocument] Lưu document version thành công: documentId={}, version={}, path={}",
                 document.getId(), versionNo, request.getStoragePath());
 
+
+
         // Tạo ExchangeTransactions cho từng receiver
         List<ExchangeDocumentResponse> exchangeDocumentResponses = new ArrayList<>();
         final Long finalDocumentId = document.getId();
-
+        List<ExchangeTransactions> listTransaction = new ArrayList<>();
         for (Long receiverId : receiverIds) {
             String transactionCode = "TXN-" + Year.now().getValue() + "-" + finalDocumentId + "-" + receiverId;
             Integer priority = NumberUtils.isNullOrNegative(request.getPriority()) ? 0 : request.getPriority();
@@ -113,18 +112,8 @@ public class ExchangeServiceImpl implements ExchangeService {
                     .currentStatus(TransactionStatus.VALIDATED)
                     .signatureStatus(SignatureStatus.VALID)
                     .build();
+            listTransaction.add(transaction);
 
-            transaction = exchangeTransactionsRepository.save(transaction);
-            log.info("[exchangeDocument] Tạo transaction VALIDATED: code={}, receiverId={}, priority={}",
-                    transactionCode, receiverId, priority);
-
-            // Ghi audit log giao dịch
-            auditLogService.log("EXCHANGE_SENT", "ORGANIZATION", request.getSenderCode(), "SUCCESS",
-                    String.format("{\"transactionCode\":\"%s\",\"receiverOrgId\":%d,\"priority\":%d}",
-                            transactionCode, receiverId, priority),
-                    transaction.getId(), finalDocumentId);
-
-            publishRoutingMessageAfterCommit(transaction);
 
             exchangeDocumentResponses.add(
                     ExchangeDocumentResponse.builder()
@@ -133,9 +122,10 @@ public class ExchangeServiceImpl implements ExchangeService {
                             .build()
             );
         }
-
-        log.info("[exchangeDocument] Hoàn thành gửi văn bản: documentId={}, số nơi nhận={}",
-                finalDocumentId, receiverIds.size());
+        listTransaction=  exchangeTransactionsRepository.saveAll(listTransaction);
+        for(ExchangeTransactions t : listTransaction){
+            publishRoutingMessageAfterCommit(t);
+        }
         return exchangeDocumentResponses;
     }
 
