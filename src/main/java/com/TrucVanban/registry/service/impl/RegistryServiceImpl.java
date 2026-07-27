@@ -19,6 +19,7 @@ import com.TrucVanban.shared.exception.DuplicateResourceException;
 import com.TrucVanban.shared.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -166,5 +167,13 @@ public class RegistryServiceImpl implements RegistryService {
         return slaConfigurationRepository.findByDocumentPriorityAndStatus(documentPriority, SlaStatus.ACTIVE)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy cấu hình SLA cho ưu tiên: " + documentPriority))
                 .getMaxReceiveHours();
+    }
+
+    @Override
+    @Cacheable(value = "certificateCache", key = "#serialNumber", unless = "#result == null")
+    public Certificate findActiveCertificateBySerialNumber(String serialNumber) {
+        return certificateRepository.findBySerialNumberAndStatus(serialNumber, CertificateStatus.ACTIVE)
+                .filter(cert -> cert.getExpiredAt() != null && !LocalDateTime.now().isAfter(cert.getExpiredAt()))
+                .orElse(null);
     }
 }

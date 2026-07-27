@@ -22,17 +22,18 @@ import java.util.List;
 @RestController
 @RequestMapping("/api")
 @RequiredArgsConstructor
-@FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 public class ExchangeController {
 
-    ExchangeService exchangeService;
+    private final ExchangeService exchangeService;
 
-    @PostMapping(value = "/exchange", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<ResponseData<List<ExchangeDocumentResponse>>> exchangeDocument(@ModelAttribute @Valid ExchangeDocumentRequest request) {
+
+    @PostMapping(value = "/exchange", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<ResponseData<List<ExchangeDocumentResponse>>> exchangeDocument(
+            @RequestBody @Valid ExchangeDocumentRequest request) {
         List<ExchangeDocumentResponse> data = exchangeService.exchangeDocument(request);
         ResponseData<List<ExchangeDocumentResponse>> response = ResponseData.<List<ExchangeDocumentResponse>>builder()
                 .success(true)
-                .message("Tiếp nhận giao dịch thành công. Hệ thống đang đưa vào hàng đợi ưu tiên")
+                .message("Tiếp nhận giao dịch thành công. Chữ ký hợp lệ - Hệ thống đang đưa vào hàng đợi ưu tiên (VALIDATED)")
                 .data(data)
                 .build();
 
@@ -40,7 +41,8 @@ public class ExchangeController {
     }
 
     @PostMapping(value = "/ack")
-    public ResponseEntity<ResponseData<ReceiveDocumentResponse>> ack(@RequestBody @Valid ReceiveDocumentRequest request) {
+    public ResponseEntity<ResponseData<ReceiveDocumentResponse>> ack(
+            @RequestBody @Valid ReceiveDocumentRequest request) {
         ReceiveDocumentResponse data = exchangeService.ackDocument(request);
         ResponseData<ReceiveDocumentResponse> response = ResponseData.<ReceiveDocumentResponse>builder()
                 .success(true)
@@ -52,12 +54,13 @@ public class ExchangeController {
     }
 
     @GetMapping(value = "{senderCode}/transactions/sended/{transactionCode}")
-    public ResponseEntity<ResponseData<TransactionSendStatusResponse>> getTransactionSendStatus(@PathVariable String senderCode,
-                                                                                                @PathVariable String transactionCode) {
+    public ResponseEntity<ResponseData<TransactionSendStatusResponse>> getTransactionSendStatus(
+            @PathVariable String senderCode,
+            @PathVariable String transactionCode) {
         TransactionSendStatusResponse data = exchangeService.getTransactionStatus(senderCode, transactionCode);
         ResponseData<TransactionSendStatusResponse> response = ResponseData.<TransactionSendStatusResponse>builder()
                 .success(true)
-                .message("Hoành thành lấy thông tin trạng thái giao dịch đã được gửi đi")
+                .message("Hoàn thành lấy thông tin trạng thái giao dịch đã được gửi đi")
                 .data(data)
                 .build();
         return ResponseEntity.ok(response);
@@ -67,7 +70,7 @@ public class ExchangeController {
     public ResponseEntity<ResponseData<?>> getTransactionReceivedStatus(@PathVariable String receiverCode) {
         List<TransactionReceivedStatusResponse> data = exchangeService.getTransactionReceivedStatus(receiverCode);
 
-        if(ListUtils.isNullOrEmpty(data)){
+        if (ListUtils.isNullOrEmpty(data)) {
             ResponseData<?> response = ResponseData.<Object>builder()
                     .success(true)
                     .message("Không có giao dịch nào được nhận")
@@ -78,7 +81,7 @@ public class ExchangeController {
 
         ResponseData<List<TransactionReceivedStatusResponse>> response = ResponseData.<List<TransactionReceivedStatusResponse>>builder()
                 .success(true)
-                .message("Hoành thành lấy danh sách thông tin trạng thái của các giao dịch đã nhận được")
+                .message("Hoàn thành lấy danh sách thông tin trạng thái của các giao dịch đã nhận được")
                 .data(data)
                 .build();
         return ResponseEntity.ok(response);

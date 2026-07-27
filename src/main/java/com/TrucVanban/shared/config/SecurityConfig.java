@@ -1,6 +1,10 @@
 package com.TrucVanban.shared.config;
 
+import com.TrucVanban.exchange.service.AuditLogService;
+import com.TrucVanban.registry.service.RegistryService;
 import com.TrucVanban.shared.auth.filter.PartnerApiKeyAuthenticationFilter;
+import com.TrucVanban.shared.utils.CanonicalStringBuilder;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -22,9 +26,18 @@ import java.util.List;
 public class SecurityConfig {
 
     private final PartnerApiKeyAuthenticationFilter partnerApiKeyAuthenticationFilter;
-
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    public SignatureVerificationFilter signatureVerificationFilter(
+            RegistryService registryService,
+            AuditLogService auditLogService,
+            ObjectMapper objectMapper,
+            CanonicalStringBuilder canonicalStringBuilder) {
+
+        return new SignatureVerificationFilter(registryService, auditLogService, objectMapper, canonicalStringBuilder);
+    }
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity http,
+                                                   SignatureVerificationFilter signatureVerificationFilter) throws Exception {
         http
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
@@ -39,8 +52,8 @@ public class SecurityConfig {
                         .anyRequest().permitAll()
                 )
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .addFilterBefore(partnerApiKeyAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
-
+                .addFilterBefore(partnerApiKeyAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(signatureVerificationFilter, PartnerApiKeyAuthenticationFilter.class);
         return http.build();
     }
 

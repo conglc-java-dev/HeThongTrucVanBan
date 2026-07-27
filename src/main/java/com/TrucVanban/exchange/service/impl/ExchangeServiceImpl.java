@@ -11,6 +11,7 @@ import com.TrucVanban.exchange.enums.SignatureStatus;
 import com.TrucVanban.exchange.enums.TransactionStatus;
 import com.TrucVanban.exchange.mapper.DocumentMapper;
 import com.TrucVanban.exchange.repository.*;
+import com.TrucVanban.exchange.service.AuditLogService;
 import com.TrucVanban.exchange.service.ExchangeService;
 import com.TrucVanban.registry.service.RegistryService;
 import com.TrucVanban.routing.dto.request.RoutingRequest;
@@ -19,7 +20,6 @@ import com.TrucVanban.shared.exception.DuplicateResourceException;
 import com.TrucVanban.shared.exception.ForbiddenException;
 import com.TrucVanban.shared.exception.ResourceNotFoundException;
 import com.TrucVanban.shared.utils.NumberUtils;
-import com.TrucVanban.storage.service.MinioService;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
@@ -29,16 +29,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.multipart.MultipartFile;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.time.LocalDateTime;
 import java.time.Year;
 import java.util.ArrayList;
-import java.util.HexFormat;
 import java.util.List;
 
 @Slf4j
@@ -48,7 +41,6 @@ import java.util.List;
 public class ExchangeServiceImpl implements ExchangeService {
 
     RegistryService registryService;
-    MinioService minioService;
 
     DocumentMapper documentMapper;
 
@@ -57,87 +49,93 @@ public class ExchangeServiceImpl implements ExchangeService {
     DocumentVersionRepository documentVersionRepository;
     DocumentReplacementRepository documentReplacementRepository;
     RabbitTemplate rabbitTemplate;
-//    DocumentReplacementRepository documentReplacementRepository;
     DocumentReceiverRepository documentReceiverRepository;
     StatusHistoryRepository statusHistoryRepository;
+    AuditLogService auditLogService;
 
     @Override
     @Transactional
     public List<ExchangeDocumentResponse> exchangeDocument(ExchangeDocumentRequest request) {
-        log.info("[exchangeDocument] Bắt đầu gửi văn bản: sender={}, receivers={}", request.getSenderCode(), request.getReceiverCodes());
+        log.info("[exchangeDocument] Bắt đầu gửi văn bản: sender={}, receivers={}",
+                request.getSenderCode(), request.getReceiverCodes());
 
         Long senderId = registryService.getOrganizationIdByCode(request.getSenderCode());
         List<Long> receiverIds = request.getReceiverCodes().stream()
                 .map(registryService::getOrganizationIdByCode)
                 .toList();
 
-//        if (!registryService.checkCertificate(request.getSignature(), senderId))
-//            throw new ForbiddenException("Certificate is not valid");
-
         if (documentRepository.existsDocumentByDocumentCode(request.getDocumentCode())) {
             throw new DuplicateResourceException("Mã văn bản đã tồn tại: " + request.getDocumentCode());
         }
 
+        // Lưu Document
         Document document = documentMapper.toDocument(request);
         document.setSenderOrgId(senderId);
         document = documentRepository.saveAndFlush(document);
-        log.info("[exchangeDocument] Lưu document thành công: documentId={}, code={}", document.getId(), document.getDocumentCode());
+        log.info("[exchangeDocument] Lưu document thành công: documentId={}, code={}",
+                document.getId(), document.getDocumentCode());
 
+        // Lưu DocumentVersion - dùng storagePath và payloadChecksum từ request
+        // (Client đã tự upload file lên MinIO và tính SHA-256 trước khi gọi API)
+        DocumentVersion existDocumentVersion = documentVersionRepository
+                .findTopByDocumentIdOrderByVersionNoDesc(document.getId())
+                .orElse(null);
+        Integer versionNo = existDocumentVersion != null ? existDocumentVersion.getVersionNo() + 1 : 1;
+
+        DocumentVersion documentVersion = DocumentVersion.builder()
+                .documentId(document.getId())
+                .versionNo(versionNo)
+                .storagePath(request.getStoragePath())
+                .checksum(request.getPayloadChecksum())
+                .fileSize(null)  // Client không bắt buộc truyền fileSize
+                .createdBy(registryService.getOrganizationNameById(senderId))
+                .build();
+
+        documentVersionRepository.save(documentVersion);
+        log.info("[exchangeDocument] Lưu document version thành công: documentId={}, version={}, path={}",
+                document.getId(), versionNo, request.getStoragePath());
+
+        // Tạo ExchangeTransactions cho từng receiver
         List<ExchangeDocumentResponse> exchangeDocumentResponses = new ArrayList<>();
+        final Long finalDocumentId = document.getId();
+
         for (Long receiverId : receiverIds) {
-            String transactionCode = "TXN-" + Year.now().getValue() + "-" + document.getId() + "-" + receiverId;
+            String transactionCode = "TXN-" + Year.now().getValue() + "-" + finalDocumentId + "-" + receiverId;
             Integer priority = NumberUtils.isNullOrNegative(request.getPriority()) ? 0 : request.getPriority();
 
             ExchangeTransactions transaction = ExchangeTransactions.builder()
                     .transactionCode(transactionCode)
-                    .documentId(document.getId())
+                    .documentId(finalDocumentId)
                     .senderOrgId(senderId)
                     .receiverOrgId(receiverId)
                     .priority(priority)
-                    .currentStatus(TransactionStatus.RECEIVED)
-                    .signatureStatus(SignatureStatus.PENDING)
-//                    .slaDeadline(LocalDateTime.now().plusHours(registryService.getMaxReceiveHoursByPriority(priority)))
+                    // Sau khi qua filter xác minh chữ ký thành công → trạng thái VALIDATED
+                    .currentStatus(TransactionStatus.VALIDATED)
+                    .signatureStatus(SignatureStatus.VALID)
                     .build();
 
             transaction = exchangeTransactionsRepository.save(transaction);
-            log.info("[exchangeDocument] Tạo transaction: code={}, receiverId={}, priority={}", transactionCode, receiverId, priority);
+            log.info("[exchangeDocument] Tạo transaction VALIDATED: code={}, receiverId={}, priority={}",
+                    transactionCode, receiverId, priority);
+
+            // Ghi audit log giao dịch
+            auditLogService.log("EXCHANGE_SENT", "ORGANIZATION", request.getSenderCode(), "SUCCESS",
+                    String.format("{\"transactionCode\":\"%s\",\"receiverOrgId\":%d,\"priority\":%d}",
+                            transactionCode, receiverId, priority),
+                    transaction.getId(), finalDocumentId);
+
             publishRoutingMessageAfterCommit(transaction);
 
             exchangeDocumentResponses.add(
                     ExchangeDocumentResponse.builder()
                             .transactionCode(transactionCode)
-                            .currentStatus(TransactionStatus.RECEIVED)
+                            .currentStatus(TransactionStatus.VALIDATED)
                             .build()
             );
         }
 
-        String url = null;
-        try {
-            url = minioService.upload(request.getPayLoad());
-
-            DocumentVersion existDocumentVersion = documentVersionRepository.findTopByDocumentIdOrderByVersionNoDesc(document.getId())
-                    .orElse(null);
-            Integer versionNo = existDocumentVersion != null ? existDocumentVersion.getVersionNo() + 1 : 1;
-
-            DocumentVersion documentVersion = DocumentVersion.builder()
-                    .documentId(document.getId())
-                    .versionNo(versionNo)
-                    .storagePath(url)
-                    .checksum(calculateFileSHA256(request.getPayLoad()))
-                    .fileSize(request.getPayLoad().getSize())
-                    .createdBy(registryService.getOrganizationNameById(senderId))
-                    .build();
-
-            documentVersionRepository.save(documentVersion);
-            log.info("[exchangeDocument] Lưu document version thành công: documentId={}, version={}", document.getId(), versionNo);
-
-        } catch (Throwable e) {
-            log.error("[exchangeDocument] Lỗi lưu document version: documentId={}, error={}", document.getId(), e.getMessage(), e);
-            if (url != null) minioService.deleteByUrl(url);
-            throw new RuntimeException("Không thể lưu file lên MinIO: " + e.getMessage(), e);
-        }
-
-        log.info("[exchangeDocument] Hoàn thành gửi văn bản: documentId={}, số nơi nhận={}", document.getId(), receiverIds.size());
+        log.info("[exchangeDocument] Hoàn thành gửi văn bản: documentId={}, số nơi nhận={}",
+                finalDocumentId, receiverIds.size());
         return exchangeDocumentResponses;
     }
 
@@ -168,26 +166,15 @@ public class ExchangeServiceImpl implements ExchangeService {
         publishTask.run();
     }
 
-    private String calculateFileSHA256(MultipartFile file) {
-        try (InputStream is = file.getInputStream()) {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] buffer = new byte[8192];
-            int read;
-            while ((read = is.read(buffer)) != -1) {
-                digest.update(buffer, 0, read);
-            }
-            return HexFormat.of().formatHex(digest.digest());
-        } catch (NoSuchAlgorithmException | IOException e) {
-            throw new RuntimeException("Không thể tính SHA-256: " + e.getMessage(), e);
-        }
-    }
-
     @Override
     @Transactional
     public ReceiveDocumentResponse ackDocument(ReceiveDocumentRequest request) {
         Long receiverId = registryService.getOrganizationIdByCode(request.getReceiverCode());
-        ExchangeTransactions transaction = exchangeTransactionsRepository.findByTransactionCodeAndCurrentStatus(request.getTransactionCode(), TransactionStatus.DELIVERED)
-                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy giao dịch đã được luân chuyển có code: " + request.getTransactionCode()));
+        ExchangeTransactions transaction = exchangeTransactionsRepository
+                .findByTransactionCodeAndCurrentStatus(request.getTransactionCode(), TransactionStatus.DELIVERED)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Không tìm thấy giao dịch đã được luân chuyển có code: " + request.getTransactionCode()));
+
         if (!receiverId.equals(transaction.getReceiverOrgId())) {
             throw new ForbiddenException("Bạn không có quyền ghi nhận văn bản này");
         }
@@ -202,6 +189,12 @@ public class ExchangeServiceImpl implements ExchangeService {
         statusHistory.setActorOrgId(receiverId);
         statusHistoryRepository.save(statusHistory);
 
+        // Ghi audit log ACK
+        auditLogService.log("ACK_RECEIVED", "ORGANIZATION", request.getReceiverCode(), "SUCCESS",
+                String.format("{\"transactionCode\":\"%s\",\"businessStatusCode\":\"%s\"}",
+                        request.getTransactionCode(), request.getBusinessStatusCode()),
+                transaction.getId(), transaction.getDocumentId());
+
         return ReceiveDocumentResponse.builder()
                 .transactionCode(request.getTransactionCode())
                 .businessStatusCode(receiver.getBusinessStatusCode())
@@ -210,7 +203,6 @@ public class ExchangeServiceImpl implements ExchangeService {
 
     @Override
     @Transactional(readOnly = true)
-    //chưa có bảng lưu lịch sử transaction status
     public TransactionSendStatusResponse getTransactionStatus(String senderCode, String transactionCode) {
         Long senderId = registryService.getOrganizationIdByCode(senderCode);
         ExchangeTransactions transaction = exchangeTransactionsRepository.findByTransactionCode(transactionCode)
@@ -247,7 +239,5 @@ public class ExchangeServiceImpl implements ExchangeService {
                             .build();
                 })
                 .toList();
-
     }
-
 }
