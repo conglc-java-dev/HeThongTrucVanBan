@@ -43,10 +43,10 @@ public class OutboxEvent {
     @Enumerated(EnumType.STRING)
     @Builder.Default
     @Column(name = "status", nullable = false, length = 20)
-    private OutboxEventStatus status = OutboxEventStatus.PENDING;
+    private OutboxEventStatus status = OutboxEventStatus.NEW;
 
     @Builder.Default
-    @Column(name = "retry_count")
+    @Column(name = "retry_count", nullable = false)
     private Integer retryCount = 0;
 
     @Column(name = "next_retry_at")
@@ -64,10 +64,30 @@ public class OutboxEvent {
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
+        nextRetryAt = LocalDateTime.now();
+        if (retryCount == null) {
+            retryCount = 0;
+        }
     }
 
     public void markProcessed() {
         status = OutboxEventStatus.PROCESSED;
         processedAt = LocalDateTime.now();
+        lastError = null;
+    }
+
+    public int getRetryCountOrDefault() {
+        return retryCount == null ? 0 : retryCount;
+    }
+
+    public void markRetry(int retryCount, int delayInMinutes, String lastError) {
+        this.retryCount = retryCount;
+        this.nextRetryAt = LocalDateTime.now().plusMinutes(delayInMinutes);
+        this.lastError = lastError;
+    }
+
+    public void markFailed(String lastError) {
+        status = OutboxEventStatus.FAILED;
+        this.lastError = lastError;
     }
 }

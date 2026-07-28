@@ -6,7 +6,7 @@ CREATE TABLE "outbox_event" (
   "event_type" varchar(100) NOT NULL,
   "payload" jsonb NOT NULL,
   "status" varchar(20) NOT NULL,
-  "retry_count" int DEFAULT 0,
+  "retry_count" int NOT NULL DEFAULT 0,
   "next_retry_at" timestamp,
   "created_at" timestamp NOT NULL,
   "processed_at" timestamp,

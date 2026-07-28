@@ -1,5 +1,8 @@
 package com.TrucVanban.shared.outbox.service.impl;
 
+import com.TrucVanban.exchange.entity.ExchangeTransactions;
+import com.TrucVanban.exchange.enums.TransactionStatus;
+import com.TrucVanban.exchange.repository.ExchangeTransactionsRepository;
 import com.TrucVanban.routing.dto.request.RoutingRequest;
 import com.TrucVanban.shared.config.RabbitMQConfig;
 import com.TrucVanban.shared.outbox.OutboxEventConstants;
@@ -24,18 +27,26 @@ import java.util.List;
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 public class OutboxEventPublisherServiceImpl implements OutboxEventPublisherService {
 
+    private static final List<Integer> RETRY_DELAYS_IN_MINUTES = List.of(5, 15, 30);
+
     OutboxEventRepository outboxEventRepository;
+    ExchangeTransactionsRepository exchangeTransactionsRepository;
     RabbitTemplate rabbitTemplate;
     ObjectMapper objectMapper;
 
     @Override
     @Transactional
     public void publishPendingEvents() {
-        List<OutboxEvent> pendingEvents = outboxEventRepository.findByStatusOrderByCreatedAtAsc(OutboxEventStatus.NEW);
+        List<OutboxEvent> pendingEvents = outboxEventRepository.findAndLockEvent(OutboxEventStatus.NEW.name());
 
         for (OutboxEvent event : pendingEvents) {
-            publish(event);
-            event.markProcessed();
+            try {
+                publish(event);
+                event.markProcessed();
+            } catch (Exception e) {
+                handleRetry(event, e);
+                log.error("[outbox] Lỗi publish outbox event: eventId={}, error={}", event.getEventId(), e.getMessage(), e);
+            }
         }
     }
 
@@ -50,7 +61,31 @@ public class OutboxEventPublisherServiceImpl implements OutboxEventPublisherServ
                 RabbitMQConfig.DOCUMENT_EXCHANGE_ROUTING_KEY,
                 routingRequest
         );
+        markTransactionRouted(event);
         log.info("[outbox] Đã publish routing message: eventId={}, transactionCode={}",
                 event.getEventId(), routingRequest.getTransactionCode());
+    }
+
+    private void markTransactionRouted(OutboxEvent event) {
+        ExchangeTransactions transaction = exchangeTransactionsRepository.findById(event.getAggregateId())
+                .orElseThrow(() -> new IllegalStateException(
+                        "Không tìm thấy giao dịch cho outbox event: " + event.getEventId()));
+
+        transaction.setCurrentStatus(TransactionStatus.ROUTED);
+        exchangeTransactionsRepository.save(transaction);
+    }
+
+    private void handleRetry(OutboxEvent event, Exception exception) {
+        int currentRetryCount = event.getRetryCountOrDefault();
+        String lastError = exception.getMessage();
+
+        if (currentRetryCount >= RETRY_DELAYS_IN_MINUTES.size()) {
+            event.markFailed(lastError);
+            return;
+        }
+
+        int nextRetryCount = currentRetryCount + 1;
+        int delayInMinutes = RETRY_DELAYS_IN_MINUTES.get(currentRetryCount);
+        event.markRetry(nextRetryCount, delayInMinutes, lastError);
     }
 }
