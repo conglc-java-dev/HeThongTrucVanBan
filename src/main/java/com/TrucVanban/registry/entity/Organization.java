@@ -33,7 +33,10 @@ public class Organization {
     @Enumerated(EnumType.STRING)
     @Column(length = 20)
     @Builder.Default
-    private OrganizationStatus status = OrganizationStatus.ACTIVE;
+    private OrganizationStatus status = OrganizationStatus.PENDING_APPROVAL;
+
+    @Column(name = "reject_reason")
+    private String rejectReason;
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;

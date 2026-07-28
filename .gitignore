@@ -31,7 +31,6 @@ build/
 
 ### VS Code ###
 .vscode/
-
+run.md
 .env
-hd.md
-hd.md
+

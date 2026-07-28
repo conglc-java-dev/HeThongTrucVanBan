@@ -12,6 +12,8 @@ public interface RegistryService {
 
     SuspendOrganizationResponse suspendOrganization(String code, SuspendOrganizationRequest request);
 
+    ApproveOrganizationResponse approveOrganization(String code, ApproveOrganizationRequest request);
+
     UpdateEndpointResponse updateEndpoint(String code, UpdateEndpointRequest request);
 
     UpdateCertificateResponse updateCertificate(String code, CertificateRequest request);
