@@ -48,12 +48,12 @@ public class SecurityConfig {
                                 "/v3/api-docs/**",
                                 "/api/public/**"
                         ).permitAll()
-                        .requestMatchers("/api/**").authenticated()
+                        .requestMatchers("/api/**").permitAll()
                         .anyRequest().permitAll()
                 )
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .addFilterBefore(partnerApiKeyAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
-                .addFilterAfter(signatureVerificationFilter, PartnerApiKeyAuthenticationFilter.class);
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
+//                .addFilterBefore(partnerApiKeyAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+//                .addFilterAfter(signatureVerificationFilter, PartnerApiKeyAuthenticationFilter.class);
         return http.build();
     }
 
