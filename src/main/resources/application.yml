@@ -24,11 +24,17 @@ spring:
     port: ${RABBITMQ_PORT}
     username: ${RABBITMQ_USERNAME}
     password: ${RABBITMQ_PASSWORD}
+    publisher-confirm-type: correlated
+    publisher-returns: true
   data:
     redis:
       host: ${REDIS_HOST}
       port: ${REDIS_PORT}
       timeout: 5000ms
+
+server:
+  servlet:
+    context-path: /api/v1
 
 minio:
   endpoint: ${MINIO_ENDPOINT}
@@ -39,3 +45,7 @@ minio:
 outbox:
   publisher:
     fixed-delay-ms: ${OUTBOX_PUBLISHER_FIXED_DELAY_MS:5000}
+
+app:
+  client-simulator:
+    gateway-url: ${CLIENT_SIMULATOR_GATEWAY_URL:http://localhost:8080/api/v1/exchange}

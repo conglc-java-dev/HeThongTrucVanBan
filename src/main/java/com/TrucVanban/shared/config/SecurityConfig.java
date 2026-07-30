@@ -2,7 +2,6 @@ package com.TrucVanban.shared.config;
 
 import com.TrucVanban.exchange.service.AuditLogService;
 import com.TrucVanban.registry.service.RegistryService;
-import com.TrucVanban.shared.auth.filter.PartnerApiKeyAuthenticationFilter;
 import com.TrucVanban.shared.utils.CanonicalStringBuilder;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -25,7 +24,6 @@ import java.util.List;
 @RequiredArgsConstructor
 public class SecurityConfig {
 
-    private final PartnerApiKeyAuthenticationFilter partnerApiKeyAuthenticationFilter;
     @Bean
     public SignatureVerificationFilter signatureVerificationFilter(
             RegistryService registryService,
@@ -45,15 +43,12 @@ public class SecurityConfig {
                         .requestMatchers(
                                 "/swagger-ui.html",
                                 "/swagger-ui/**",
-                                "/v3/api-docs/**",
-                                "/api/public/**"
+                                "/v3/api-docs/**"
                         ).permitAll()
-                        .requestMatchers("/api/**").authenticated()
                         .anyRequest().permitAll()
                 )
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .addFilterBefore(partnerApiKeyAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
-                .addFilterAfter(signatureVerificationFilter, PartnerApiKeyAuthenticationFilter.class);
+                .addFilterAfter(signatureVerificationFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
 

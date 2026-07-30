@@ -5,9 +5,9 @@ import com.TrucVanban.exchange.service.ClientSimulatorService;
 import com.TrucVanban.shared.utils.CanonicalStringBuilder;
 import com.TrucVanban.shared.service.MinioService;
 import lombok.AccessLevel;
-import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
@@ -31,13 +31,25 @@ import java.util.UUID;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 public class ClientSimulatorServiceImpl implements ClientSimulatorService {
 
     RestClient restClient; // Tiêm Bean RestClient từ file cấu hình của bạn vào đây
     CanonicalStringBuilder canonicalStringBuilder;
     MinioService minioService;
+    String gatewayUrl;
+
+    public ClientSimulatorServiceImpl(
+            RestClient restClient,
+            CanonicalStringBuilder canonicalStringBuilder,
+            MinioService minioService,
+            @Value("${app.client-simulator.gateway-url}") String gatewayUrl
+    ) {
+        this.restClient = restClient;
+        this.canonicalStringBuilder = canonicalStringBuilder;
+        this.minioService = minioService;
+        this.gatewayUrl = gatewayUrl;
+    }
 
     @Override
     public Object processAndSend(MultipartFile file, String senderCode, List<String> receiverCodes,
@@ -87,7 +99,6 @@ public class ClientSimulatorServiceImpl implements ClientSimulatorService {
         log.info("[Simulator Service] Đã dập chữ ký số RSA thực tế thành công.");
 
         // 6. BẮN REQUEST JSON SANG TRỤC GATEWAY DÙNG RESTCLIENT FLUENT API
-        String gatewayUrl = "http://localhost:8080/api/exchange";
         log.info("[Simulator Service] Đang dùng RestClient chuyển tiếp gói tin JSON tới Gateway: {}", gatewayUrl);
 
         // Code viết theo phong cách Fluent rất sạch sẽ, tự động map Object thành JSON và parse Body kết quả

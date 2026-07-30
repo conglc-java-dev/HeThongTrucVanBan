@@ -43,7 +43,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class SignatureVerificationFilter extends OncePerRequestFilter {
 
-    private static final String EXCHANGE_PATH = "/api/exchange";
+    private static final String EXCHANGE_PATH = "/exchange";
     private static final int MAX_TIME_DIFF_MINUTES = 5;
     private static final AntPathMatcher PATH_MATCHER = new AntPathMatcher();
 
