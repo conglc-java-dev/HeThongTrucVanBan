@@ -24,6 +24,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 @Slf4j
 @Service
@@ -50,7 +53,7 @@ public class RegistryServiceImpl implements RegistryService {
         certificate.setOrganizationId(organization.getId());
         certificateRepository.save(certificate);
 
-        log.info("Đăng ký tổ chức thành công: code={}, id={}", organization.getCode(), organization.getId());
+        log.info("Đăng ký tổ chức - chờ phê duyệt: code={}, id={}", organization.getCode(), organization.getId());
 
         return organizationMapper.toRegisterResponse(organization);
     }
@@ -71,6 +74,34 @@ public class RegistryServiceImpl implements RegistryService {
         log.info("Khóa tổ chức thành công: code={}, reason={}", code, request.getReason());
 
         return organizationMapper.toSuspendResponse(organization);
+    }
+
+    @Override
+    @Transactional
+    public ApproveOrganizationResponse approveOrganization(String code, ApproveOrganizationRequest request) {
+        Organization organization = organizationRepository.findByCode(code)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy tổ chức với mã: " + code));
+
+        if (organization.getStatus() != OrganizationStatus.PENDING_APPROVAL) {
+            throw new BusinessLogicException("Tổ chức '" + code + "' không ở trạng thái chờ duyệt (hiện tại: " + organization.getStatus() + ")");
+        }
+
+        if (Boolean.TRUE.equals(request.getIsApproved())) {
+            organization.setStatus(OrganizationStatus.ACTIVE);
+            organization.setRejectReason(null);
+            log.info("Phê duyệt tổ chức thành công: code={}", code);
+        } else {
+            organization.setStatus(OrganizationStatus.REJECTED);
+            organization.setRejectReason(request.getRejectReason());
+            log.info("Từ chối tổ chức: code={}, reason={}", code, request.getRejectReason());
+        }
+
+        organizationRepository.save(organization);
+
+        return ApproveOrganizationResponse.builder()
+                .code(organization.getCode())
+                .status(organization.getStatus())
+                .build();
     }
 
     @Override
@@ -146,6 +177,29 @@ public class RegistryServiceImpl implements RegistryService {
         Organization organization = organizationRepository.findByCode(code)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy tổ chức với mã: " + code));
         return organization.getId();
+    }
+
+    @Override
+    public List<Long> getOrganizationIdsByCode(List<String> codes) {
+        if (codes == null || codes.isEmpty()) {
+            return List.of();
+        }
+
+        Map<String, Long> organizationIdsByCode = organizationRepository.findByCodeIn(codes).stream()
+                .collect(LinkedHashMap::new, (map, organization) -> map.put(organization.getCode(), organization.getId()), Map::putAll);
+
+        List<String> missingCodes = codes.stream()
+                .distinct()
+                .filter(code -> !organizationIdsByCode.containsKey(code))
+                .toList();
+
+        if (!missingCodes.isEmpty()) {
+            throw new ResourceNotFoundException("Không tìm thấy tổ chức với mã: " + String.join(", ", missingCodes));
+        }
+
+        return codes.stream()
+                .map(organizationIdsByCode::get)
+                .toList();
     }
 
     @Override

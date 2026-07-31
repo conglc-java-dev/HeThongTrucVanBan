@@ -15,21 +15,22 @@ import com.TrucVanban.exchange.service.AuditLogService;
 import com.TrucVanban.exchange.service.ExchangeService;
 import com.TrucVanban.registry.service.RegistryService;
 import com.TrucVanban.routing.dto.request.RoutingRequest;
-import com.TrucVanban.shared.config.RabbitMQConfig;
 import com.TrucVanban.shared.exception.DuplicateResourceException;
 import com.TrucVanban.shared.exception.ForbiddenException;
 import com.TrucVanban.shared.exception.ResourceNotFoundException;
+import com.TrucVanban.shared.outbox.OutboxEventConstants;
+import com.TrucVanban.shared.outbox.entity.OutboxEvent;
+import com.TrucVanban.shared.outbox.repository.OutboxEventRepository;
 import com.TrucVanban.shared.utils.NumberUtils;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.time.Year;
 import java.util.ArrayList;
 import java.util.List;
@@ -48,25 +49,23 @@ public class ExchangeServiceImpl implements ExchangeService {
     ExchangeTransactionsRepository exchangeTransactionsRepository;
     DocumentVersionRepository documentVersionRepository;
     DocumentReplacementRepository documentReplacementRepository;
-    RabbitTemplate rabbitTemplate;
     DocumentReceiverRepository documentReceiverRepository;
     StatusHistoryRepository statusHistoryRepository;
     AuditLogService auditLogService;
+    OutboxEventRepository outboxEventRepository;
+    ObjectMapper objectMapper;
 
     @Override
     @Transactional
     public List<ExchangeDocumentResponse> exchangeDocument(ExchangeDocumentRequest request) {
         log.info("[exchangeDocument] Bắt đầu gửi văn bản: sender={}, receivers={}",
                 request.getSenderCode(), request.getReceiverCodes());
-
-        Long senderId = registryService.getOrganizationIdByCode(request.getSenderCode());
-        List<Long> receiverIds = request.getReceiverCodes().stream()
-                .map(registryService::getOrganizationIdByCode)
-                .toList();
-
         if (documentRepository.existsDocumentByDocumentCode(request.getDocumentCode())) {
             throw new DuplicateResourceException("Mã văn bản đã tồn tại: " + request.getDocumentCode());
         }
+
+        Long senderId = registryService.getOrganizationIdByCode(request.getSenderCode());
+        List<Long> receiverIds = registryService.getOrganizationIdsByCode(request.getReceiverCodes());
 
         // Lưu Document
         Document document = documentMapper.toDocument(request);
@@ -95,10 +94,12 @@ public class ExchangeServiceImpl implements ExchangeService {
         log.info("[exchangeDocument] Lưu document version thành công: documentId={}, version={}, path={}",
                 document.getId(), versionNo, request.getStoragePath());
 
+
+
         // Tạo ExchangeTransactions cho từng receiver
         List<ExchangeDocumentResponse> exchangeDocumentResponses = new ArrayList<>();
         final Long finalDocumentId = document.getId();
-
+        List<ExchangeTransactions> listTransaction = new ArrayList<>();
         for (Long receiverId : receiverIds) {
             String transactionCode = "TXN-" + Year.now().getValue() + "-" + finalDocumentId + "-" + receiverId;
             Integer priority = NumberUtils.isNullOrNegative(request.getPriority()) ? 0 : request.getPriority();
@@ -113,18 +114,8 @@ public class ExchangeServiceImpl implements ExchangeService {
                     .currentStatus(TransactionStatus.VALIDATED)
                     .signatureStatus(SignatureStatus.VALID)
                     .build();
+            listTransaction.add(transaction);
 
-            transaction = exchangeTransactionsRepository.save(transaction);
-            log.info("[exchangeDocument] Tạo transaction VALIDATED: code={}, receiverId={}, priority={}",
-                    transactionCode, receiverId, priority);
-
-            // Ghi audit log giao dịch
-            auditLogService.log("EXCHANGE_SENT", "ORGANIZATION", request.getSenderCode(), "SUCCESS",
-                    String.format("{\"transactionCode\":\"%s\",\"receiverOrgId\":%d,\"priority\":%d}",
-                            transactionCode, receiverId, priority),
-                    transaction.getId(), finalDocumentId);
-
-            publishRoutingMessageAfterCommit(transaction);
 
             exchangeDocumentResponses.add(
                     ExchangeDocumentResponse.builder()
@@ -133,37 +124,24 @@ public class ExchangeServiceImpl implements ExchangeService {
                             .build()
             );
         }
-
-        log.info("[exchangeDocument] Hoàn thành gửi văn bản: documentId={}, số nơi nhận={}",
-                finalDocumentId, receiverIds.size());
+        listTransaction = exchangeTransactionsRepository.saveAll(listTransaction);
+        outboxEventRepository.saveAll(listTransaction.stream()
+                .map(this::toRoutingOutboxEvent)
+                .toList());
         return exchangeDocumentResponses;
     }
 
-    private void publishRoutingMessageAfterCommit(ExchangeTransactions transaction) {
+    private OutboxEvent toRoutingOutboxEvent(ExchangeTransactions transaction) {
         RoutingRequest routingRequest = RoutingRequest.builder()
                 .transactionCode(transaction.getTransactionCode())
                 .build();
 
-        Runnable publishTask = () -> {
-            rabbitTemplate.convertAndSend(
-                    RabbitMQConfig.DOCUMENT_EXCHANGE,
-                    RabbitMQConfig.DOCUMENT_EXCHANGE_ROUTING_KEY,
-                    routingRequest
-            );
-            log.info("[exchangeDocument] Đã publish routing message: transactionCode={}", transaction.getTransactionCode());
-        };
-
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override
-                public void afterCommit() {
-                    publishTask.run();
-                }
-            });
-            return;
-        }
-
-        publishTask.run();
+        return OutboxEvent.builder()
+                .aggregateType(OutboxEventConstants.AGGREGATE_TYPE_EXCHANGE_TRANSACTION)
+                .aggregateId(transaction.getId())
+                .eventType(OutboxEventConstants.EVENT_TYPE_ROUTING_REQUEST)
+                .payload(objectMapper.valueToTree(routingRequest))
+                .build();
     }
 
     @Override
