@@ -55,3 +55,4 @@ INSERT INTO "permissions" ("code", "name", "description") VALUES
 ('DOC_TRACKING', 'Theo dõi tracking', 'Theo dõi trạng thái luân chuyển văn bản');
 
 
+
