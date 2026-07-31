@@ -36,11 +36,10 @@ import java.util.List;
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 public class ClientSimulatorServiceImpl implements ClientSimulatorService {
 
-    RestClient restClient; // Đảm bảo đã config Bean RestClient
+    RestClient restClient;
     CanonicalStringBuilder canonicalStringBuilder;
     MinioService minioService;
 
-    // Đường dẫn tĩnh tới file Private Key
     private static final String PRIVATE_KEY_PATH = "private_key.pem";
 
     @Override
