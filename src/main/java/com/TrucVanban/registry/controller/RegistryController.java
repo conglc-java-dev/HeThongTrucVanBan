@@ -25,11 +25,31 @@ public class RegistryController {
 
         ResponseData<RegisterOrganizationResponse> response = ResponseData.<RegisterOrganizationResponse>builder()
                 .success(true)
-                .message("Đăng ký tổ chức thành công")
+                .message("Đăng ký thành công. Vui lòng chờ được phê duyệt.")
                 .data(data)
                 .build();
 
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+
+    @PutMapping("/organizations/{code}/approve")
+    public ResponseEntity<ResponseData<ApproveOrganizationResponse>> approveOrganization(
+            @PathVariable String code,
+            @Valid @RequestBody ApproveOrganizationRequest request) {
+
+        ApproveOrganizationResponse data = registryService.approveOrganization(code, request);
+
+        String message = data.getStatus() == com.TrucVanban.registry.enums.OrganizationStatus.ACTIVE
+                ? "Đã phê duyệt tổ chức thành công"
+                : "Đã từ chối yêu cầu đăng ký của tổ chức";
+
+        ResponseData<ApproveOrganizationResponse> response = ResponseData.<ApproveOrganizationResponse>builder()
+                .success(true)
+                .message(message)
+                .data(data)
+                .build();
+
+        return ResponseEntity.ok(response);
     }
 
     @PutMapping("/organizations/{code}/suspend")
@@ -41,7 +61,7 @@ public class RegistryController {
 
         ResponseData<SuspendOrganizationResponse> response = ResponseData.<SuspendOrganizationResponse>builder()
                 .success(true)
-                .message("Tổ chức đã bị khóa thành công")
+                .message("Khóa tổ chức thành công")
                 .data(data)
                 .build();
 
@@ -88,7 +108,7 @@ public class RegistryController {
 
         ResponseData<OrganizationDetailResponse> response = ResponseData.<OrganizationDetailResponse>builder()
                 .success(true)
-                .message("Lấy thông tin thành công")
+                .message("Tra cứu thông tin thành công")
                 .data(data)
                 .build();
 

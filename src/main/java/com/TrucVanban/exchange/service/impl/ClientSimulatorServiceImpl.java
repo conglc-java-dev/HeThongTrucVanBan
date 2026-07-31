@@ -7,9 +7,9 @@ import com.TrucVanban.exchange.service.ClientSimulatorService;
 import com.TrucVanban.shared.utils.CanonicalStringBuilder;
 import com.TrucVanban.shared.service.MinioService;
 import lombok.AccessLevel;
-import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
@@ -32,13 +32,25 @@ import java.util.List;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 public class ClientSimulatorServiceImpl implements ClientSimulatorService {
 
     RestClient restClient; // Đảm bảo đã config Bean RestClient
     CanonicalStringBuilder canonicalStringBuilder;
     MinioService minioService;
+    String gatewayUrl;
+
+    public ClientSimulatorServiceImpl(
+            RestClient restClient,
+            CanonicalStringBuilder canonicalStringBuilder,
+            MinioService minioService,
+            @Value("${app.client-simulator.gateway-url}") String gatewayUrl
+    ) {
+        this.restClient = restClient;
+        this.canonicalStringBuilder = canonicalStringBuilder;
+        this.minioService = minioService;
+        this.gatewayUrl = gatewayUrl;
+    }
 
     // Đường dẫn tĩnh tới file Private Key
     private static final String PRIVATE_KEY_PATH = "private_key.pem";
