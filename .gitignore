@@ -31,6 +31,10 @@ build/
 
 ### VS Code ###
 .vscode/
+#==canh
 run.md
+endpoint-exchange.md
+sign.java
+#==
 .env
 
