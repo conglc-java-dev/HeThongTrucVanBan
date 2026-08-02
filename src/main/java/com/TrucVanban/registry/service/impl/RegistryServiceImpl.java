@@ -14,7 +14,7 @@ import com.TrucVanban.registry.repository.CertificateRepository;
 import com.TrucVanban.registry.repository.OrganizationRepository;
 import com.TrucVanban.registry.repository.SlaConfigurationRepository;
 import com.TrucVanban.registry.service.RegistryService;
-import com.TrucVanban.shared.exception.BusinessLogicException;
+import com.TrucVanban.registry.validator.OrganizationStateTransitionValidator;
 import com.TrucVanban.shared.exception.DuplicateResourceException;
 import com.TrucVanban.shared.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
@@ -38,6 +38,7 @@ public class RegistryServiceImpl implements RegistryService {
     private final SlaConfigurationRepository slaConfigurationRepository;
     private final OrganizationMapper organizationMapper;
     private final SlaConfigMapper slaConfigMapper;
+    private final OrganizationStateTransitionValidator organizationStateTransitionValidator;
 
     @Override
     @Transactional
@@ -68,7 +69,7 @@ public class RegistryServiceImpl implements RegistryService {
         OrganizationStatus current = organization.getStatus();
         OrganizationStatus target = request.getStatus();
 
-        validateTransition(code, current, target, request.getReason());
+        organizationStateTransitionValidator.validate(code, current, target, request.getReason());
 
         organization.setStatus(target);
         if (target == OrganizationStatus.REJECTED) {
@@ -84,31 +85,6 @@ public class RegistryServiceImpl implements RegistryService {
                 .code(organization.getCode())
                 .status(organization.getStatus())
                 .build();
-    }
-
-    /*
-     Validate
-     PENDING_APPROVAL → ACTIVE (approve)
-     PENDING_APPROVAL → REJECTED (reject, reason)
-     ACTIVE → SUSPENDED (suspend, reason)
-     SUSPENDED → ACTIVE (reactivate)
-    */
-    private void validateTransition(String code, OrganizationStatus current, OrganizationStatus target, String reason) {
-        boolean valid = switch (current) {
-            case PENDING_APPROVAL -> target == OrganizationStatus.ACTIVE || target == OrganizationStatus.REJECTED;
-            case ACTIVE -> target == OrganizationStatus.SUSPENDED;
-            case SUSPENDED -> target == OrganizationStatus.ACTIVE;
-            case REJECTED -> false;
-        };
-
-        if (!valid) {
-            throw new BusinessLogicException(
-                    "Không thể chuyển trạng thái tổ chức '" + code + "' từ " + current + " sang " + target);
-        }
-        if ((target == OrganizationStatus.REJECTED || target == OrganizationStatus.SUSPENDED)
-                && (reason == null || reason.isBlank())) {
-            throw new BusinessLogicException("Lý do là bắt buộc khi chuyển sang trạng thái " + target);
-        }
     }
 
     @Override
