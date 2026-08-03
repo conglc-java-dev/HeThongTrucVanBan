@@ -14,7 +14,7 @@ import com.TrucVanban.registry.repository.CertificateRepository;
 import com.TrucVanban.registry.repository.OrganizationRepository;
 import com.TrucVanban.registry.repository.SlaConfigurationRepository;
 import com.TrucVanban.registry.service.RegistryService;
-import com.TrucVanban.shared.exception.BusinessLogicException;
+import com.TrucVanban.registry.validator.OrganizationStateTransitionValidator;
 import com.TrucVanban.shared.exception.DuplicateResourceException;
 import com.TrucVanban.shared.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
@@ -38,6 +38,7 @@ public class RegistryServiceImpl implements RegistryService {
     private final SlaConfigurationRepository slaConfigurationRepository;
     private final OrganizationMapper organizationMapper;
     private final SlaConfigMapper slaConfigMapper;
+    private final OrganizationStateTransitionValidator organizationStateTransitionValidator;
 
     @Override
     @Transactional
@@ -60,45 +61,27 @@ public class RegistryServiceImpl implements RegistryService {
 
     @Override
     @Transactional
-    public SuspendOrganizationResponse suspendOrganization(String code, SuspendOrganizationRequest request) {
+    public UpdateOrganizationStatusResponse updateOrganizationStatus(String code,
+            UpdateOrganizationStatusRequest request) {
         Organization organization = organizationRepository.findByCode(code)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy tổ chức với mã: " + code));
 
-        if (organization.getStatus() == OrganizationStatus.SUSPENDED) {
-            throw new BusinessLogicException("Tổ chức '" + code + "' đã bị khóa trước đó");
-        }
+        OrganizationStatus current = organization.getStatus();
+        OrganizationStatus target = request.getStatus();
 
-        organization.setStatus(OrganizationStatus.SUSPENDED);
-        organizationRepository.save(organization);
+        organizationStateTransitionValidator.validate(code, current, target, request.getReason());
 
-        log.info("Khóa tổ chức thành công: code={}, reason={}", code, request.getReason());
-
-        return organizationMapper.toSuspendResponse(organization);
-    }
-
-    @Override
-    @Transactional
-    public ApproveOrganizationResponse approveOrganization(String code, ApproveOrganizationRequest request) {
-        Organization organization = organizationRepository.findByCode(code)
-                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy tổ chức với mã: " + code));
-
-        if (organization.getStatus() != OrganizationStatus.PENDING_APPROVAL) {
-            throw new BusinessLogicException("Tổ chức '" + code + "' không ở trạng thái chờ duyệt (hiện tại: " + organization.getStatus() + ")");
-        }
-
-        if (Boolean.TRUE.equals(request.getIsApproved())) {
-            organization.setStatus(OrganizationStatus.ACTIVE);
+        organization.setStatus(target);
+        if (target == OrganizationStatus.REJECTED) {
+            organization.setRejectReason(request.getReason());
+        } else if (target == OrganizationStatus.ACTIVE) {
             organization.setRejectReason(null);
-            log.info("Phê duyệt tổ chức thành công: code={}", code);
-        } else {
-            organization.setStatus(OrganizationStatus.REJECTED);
-            organization.setRejectReason(request.getRejectReason());
-            log.info("Từ chối tổ chức: code={}, reason={}", code, request.getRejectReason());
         }
-
         organizationRepository.save(organization);
 
-        return ApproveOrganizationResponse.builder()
+        log.info("[RegistryService] Cập nhật trạng thái tổ chức: code={}, {} → {}", code, current, target);
+
+        return UpdateOrganizationStatusResponse.builder()
                 .code(organization.getCode())
                 .status(organization.getStatus())
                 .build();
@@ -171,7 +154,7 @@ public class RegistryServiceImpl implements RegistryService {
         return slaConfigMapper.toResponse(slaConfig);
     }
 
-    //not for api
+    // not for api
     @Override
     public Long getOrganizationIdByCode(String code) {
         Organization organization = organizationRepository.findByCode(code)
@@ -186,7 +169,8 @@ public class RegistryServiceImpl implements RegistryService {
         }
 
         Map<String, Long> organizationIdsByCode = organizationRepository.findByCodeIn(codes).stream()
-                .collect(LinkedHashMap::new, (map, organization) -> map.put(organization.getCode(), organization.getId()), Map::putAll);
+                .collect(LinkedHashMap::new,
+                        (map, organization) -> map.put(organization.getCode(), organization.getId()), Map::putAll);
 
         List<String> missingCodes = codes.stream()
                 .distinct()
@@ -219,7 +203,8 @@ public class RegistryServiceImpl implements RegistryService {
     @Override
     public Integer getMaxReceiveHoursByPriority(Integer documentPriority) {
         return slaConfigurationRepository.findByDocumentPriorityAndStatus(documentPriority, SlaStatus.ACTIVE)
-                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy cấu hình SLA cho ưu tiên: " + documentPriority))
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Không tìm thấy cấu hình SLA cho ưu tiên: " + documentPriority))
                 .getMaxReceiveHours();
     }
 
