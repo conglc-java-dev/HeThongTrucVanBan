@@ -17,16 +17,19 @@ import com.TrucVanban.registry.service.RegistryService;
 import com.TrucVanban.routing.dto.request.RoutingRequest;
 import com.TrucVanban.shared.exception.DuplicateResourceException;
 import com.TrucVanban.shared.exception.ForbiddenException;
+import com.TrucVanban.shared.exception.InvalidInputException;
 import com.TrucVanban.shared.exception.ResourceNotFoundException;
 import com.TrucVanban.shared.outbox.OutboxEventConstants;
 import com.TrucVanban.shared.outbox.entity.OutboxEvent;
 import com.TrucVanban.shared.outbox.repository.OutboxEventRepository;
 import com.TrucVanban.shared.utils.NumberUtils;
+import com.TrucVanban.shared.utils.StringUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -41,6 +44,9 @@ import java.util.List;
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 public class ExchangeServiceImpl implements ExchangeService {
 
+    private static final String EXCHANGE_DOCUMENT_IDEMPOTENCY_KEY_PREFIX = "idempotency:exchange-document:";
+    private static final String IDEMPOTENCY_COMPLETED_VALUE = "COMPLETED";
+
     RegistryService registryService;
 
     DocumentMapper documentMapper;
@@ -54,12 +60,24 @@ public class ExchangeServiceImpl implements ExchangeService {
     AuditLogService auditLogService;
     OutboxEventRepository outboxEventRepository;
     ObjectMapper objectMapper;
+    StringRedisTemplate redisTemplate;
+    private final Object lock  = new Object();
 
     @Override
     @Transactional
-    public List<ExchangeDocumentResponse> exchangeDocument(ExchangeDocumentRequest request) {
+    public synchronized List<ExchangeDocumentResponse> exchangeDocument(ExchangeDocumentRequest request, String idempotencyKey) {
         log.info("[exchangeDocument] Bắt đầu gửi văn bản: sender={}, receivers={}",
                 request.getSenderCode(), request.getReceiverCodes());
+        if (StringUtils.isNullOrBlank(idempotencyKey)) {
+            throw new InvalidInputException("Idempotency-Key là bắt buộc");
+        }
+        String redisIdempotencyKey = buildExchangeDocumentIdempotencyKey(idempotencyKey);
+            if (Boolean.TRUE.equals(redisTemplate.hasKey(redisIdempotencyKey))) {
+                throw new DuplicateResourceException("Yêu cầu gửi văn bản đã được xử lý với idempotency key: "
+                        + idempotencyKey);
+            }
+
+
         if (documentRepository.existsDocumentByDocumentCode(request.getDocumentCode())) {
             throw new DuplicateResourceException("Mã văn bản đã tồn tại: " + request.getDocumentCode());
         }
@@ -128,7 +146,12 @@ public class ExchangeServiceImpl implements ExchangeService {
         outboxEventRepository.saveAll(listTransaction.stream()
                 .map(this::toRoutingOutboxEvent)
                 .toList());
+        redisTemplate.opsForValue().set(redisIdempotencyKey, IDEMPOTENCY_COMPLETED_VALUE);
         return exchangeDocumentResponses;
+    }
+
+    private String buildExchangeDocumentIdempotencyKey(String idempotencyKey) {
+        return EXCHANGE_DOCUMENT_IDEMPOTENCY_KEY_PREFIX + idempotencyKey;
     }
 
     private OutboxEvent toRoutingOutboxEvent(ExchangeTransactions transaction) {

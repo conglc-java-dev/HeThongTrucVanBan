@@ -28,8 +28,9 @@ public class ExchangeController {
 
     @PostMapping(value = "/exchange", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<ResponseData<List<ExchangeDocumentResponse>>> exchangeDocument(
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
             @RequestBody @Valid ExchangeDocumentRequest request) {
-        List<ExchangeDocumentResponse> data = exchangeService.exchangeDocument(request);
+        List<ExchangeDocumentResponse> data = exchangeService.exchangeDocument(request, idempotencyKey);
         ResponseData<List<ExchangeDocumentResponse>> response = ResponseData.<List<ExchangeDocumentResponse>>builder()
                 .success(true)
                 .message("Tiếp nhận giao dịch thành công. Chữ ký hợp lệ - Hệ thống đang đưa vào hàng đợi ưu tiên (VALIDATED)")
