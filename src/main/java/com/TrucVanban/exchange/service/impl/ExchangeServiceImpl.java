@@ -30,7 +30,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
 import java.time.Year;
 import java.util.ArrayList;
 import java.util.List;
@@ -207,7 +206,7 @@ public class ExchangeServiceImpl implements ExchangeService {
                                     .status(sh.getStatusCode().getCode())
                                     .build())
                             .toList());
-                    timelines.addFirst(TransactionReceivedStatusResponse.timeline.builder()
+                    timelines.add(0, TransactionReceivedStatusResponse.timeline.builder()
                             .time(t.getCreatedAt())
                             .status(t.getCurrentStatus().name())
                             .build());

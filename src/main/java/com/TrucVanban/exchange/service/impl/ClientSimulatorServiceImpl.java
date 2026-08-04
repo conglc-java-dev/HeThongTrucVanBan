@@ -116,7 +116,7 @@ public class ClientSimulatorServiceImpl implements ClientSimulatorService {
         ExchangeDocumentRequest finalPayload = signAndBuildPayload(signReq);
 
         // 4. Bắn sang Gateway
-        String gatewayUrl = "http://localhost:8080/api/exchange/send";
+        String gatewayUrl = "http://localhost:8080/api/v1/exchange";
         log.info("[Simulator Service] RestClient gửi tới Gateway: {}", gatewayUrl);
 
         return restClient.post()

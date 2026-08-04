@@ -8,11 +8,12 @@ import com.TrucVanban.exchange.dto.response.TransactionReceivedStatusResponse;
 import com.TrucVanban.exchange.dto.response.TransactionSendStatusResponse;
 import com.TrucVanban.exchange.service.ExchangeService;
 import com.TrucVanban.shared.ResponseData;
+import com.TrucVanban.shared.security.hmac.RequireAgencyMatch;
 import com.TrucVanban.shared.utils.ListUtils;
+
+import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
-import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
-import lombok.experimental.FieldDefaults;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -27,6 +28,7 @@ public class ExchangeController {
 
 
     @PostMapping(value = "/exchange", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @Operation(summary = "Tiếp nhận giao dịch")
     public ResponseEntity<ResponseData<List<ExchangeDocumentResponse>>> exchangeDocument(
             @RequestBody @Valid ExchangeDocumentRequest request) {
         List<ExchangeDocumentResponse> data = exchangeService.exchangeDocument(request);
@@ -40,6 +42,7 @@ public class ExchangeController {
     }
 
     @PostMapping(value = "/ack")
+    @Operation(summary = "Ghi nhận trạng thái ACK thành công")
     public ResponseEntity<ResponseData<ReceiveDocumentResponse>> ack(
             @RequestBody @Valid ReceiveDocumentRequest request) {
         ReceiveDocumentResponse data = exchangeService.ackDocument(request);
@@ -53,6 +56,8 @@ public class ExchangeController {
     }
 
     @GetMapping(value = "{senderCode}/transactions/sended/{transactionCode}")
+    @RequireAgencyMatch(pathVariable = "senderCode")
+    @Operation(summary = "Lấy trạng thái giao dịch đã gửi")
     public ResponseEntity<ResponseData<TransactionSendStatusResponse>> getTransactionSendStatus(
             @PathVariable String senderCode,
             @PathVariable String transactionCode) {
@@ -66,6 +71,8 @@ public class ExchangeController {
     }
 
     @GetMapping(value = "{receiverCode}/transactions/received")
+    @RequireAgencyMatch(pathVariable = "receiverCode")
+    @Operation(summary = "Lấy trạng thái giao dịch đã nhận")
     public ResponseEntity<ResponseData<?>> getTransactionReceivedStatus(@PathVariable String receiverCode) {
         List<TransactionReceivedStatusResponse> data = exchangeService.getTransactionReceivedStatus(receiverCode);
 
