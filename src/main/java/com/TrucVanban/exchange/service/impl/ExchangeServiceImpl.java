@@ -15,21 +15,25 @@ import com.TrucVanban.exchange.service.AuditLogService;
 import com.TrucVanban.exchange.service.ExchangeService;
 import com.TrucVanban.registry.service.RegistryService;
 import com.TrucVanban.routing.dto.request.RoutingRequest;
-import com.TrucVanban.shared.exception.DuplicateResourceException;
-import com.TrucVanban.shared.exception.ForbiddenException;
-import com.TrucVanban.shared.exception.ResourceNotFoundException;
+import com.TrucVanban.shared.exception.*;
 import com.TrucVanban.shared.outbox.OutboxEventConstants;
 import com.TrucVanban.shared.outbox.entity.OutboxEvent;
 import com.TrucVanban.shared.outbox.repository.OutboxEventRepository;
 import com.TrucVanban.shared.utils.NumberUtils;
+import com.TrucVanban.shared.utils.StringUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.time.Duration;
+import java.time.LocalDateTime;
 import java.time.Year;
 import java.util.ArrayList;
 import java.util.List;
@@ -39,6 +43,9 @@ import java.util.List;
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 public class ExchangeServiceImpl implements ExchangeService {
+
+    private static final String EXCHANGE_DOCUMENT_IDEMPOTENCY_KEY_PREFIX = "idempotency:exchange-document:";
+    private static final String IDEMPOTENCY_COMPLETED_VALUE = "COMPLETED";
 
     RegistryService registryService;
 
@@ -53,81 +60,125 @@ public class ExchangeServiceImpl implements ExchangeService {
     AuditLogService auditLogService;
     OutboxEventRepository outboxEventRepository;
     ObjectMapper objectMapper;
+    StringRedisTemplate redisTemplate;
+    private final Object lock  = new Object();
 
     @Override
     @Transactional
-    public List<ExchangeDocumentResponse> exchangeDocument(ExchangeDocumentRequest request) {
+    public List<ExchangeDocumentResponse> exchangeDocument(ExchangeDocumentRequest request, String idempotencyKey) {
         log.info("[exchangeDocument] Bắt đầu gửi văn bản: sender={}, receivers={}",
                 request.getSenderCode(), request.getReceiverCodes());
-        if (documentRepository.existsDocumentByDocumentCode(request.getDocumentCode())) {
-            throw new DuplicateResourceException("Mã văn bản đã tồn tại: " + request.getDocumentCode());
+        if (StringUtils.isNullOrBlank(idempotencyKey)) {
+            throw new InvalidInputException("Idempotency-Key là bắt buộc");
         }
+        String redisIdempotencyKey = buildExchangeDocumentIdempotencyKey(idempotencyKey);
+        Boolean claimed = redisTemplate.opsForValue().setIfAbsent(
+                redisIdempotencyKey,
+                "PROCESSING",
+                Duration.ofMinutes(10)
+        );
+        if(!claimed){
+            if(redisTemplate.opsForValue().get(redisIdempotencyKey).equals(IDEMPOTENCY_COMPLETED_VALUE)){
+                throw new BusinessLogicException("Yêu cầu đã được xử lý trước đó. Vui lòng không gửi lại.");
+            }
+            else throw new DuplicateResourceException("Yêu cầu đang được xử lý. Vui lòng thử lại sau.");
+        }
+        try{
+            if (documentRepository.existsDocumentByDocumentCode(request.getDocumentCode())) {
+                throw new DuplicateResourceException("Mã văn bản đã tồn tại: " + request.getDocumentCode());
+            }
 
-        Long senderId = registryService.getOrganizationIdByCode(request.getSenderCode());
-        List<Long> receiverIds = registryService.getOrganizationIdsByCode(request.getReceiverCodes());
+            Long senderId = registryService.getOrganizationIdByCode(request.getSenderCode());
+            List<Long> receiverIds = registryService.getOrganizationIdsByCode(request.getReceiverCodes());
 
-        // Lưu Document
-        Document document = documentMapper.toDocument(request);
-        document.setSenderOrgId(senderId);
-        document = documentRepository.saveAndFlush(document);
-        log.info("[exchangeDocument] Lưu document thành công: documentId={}, code={}",
-                document.getId(), document.getDocumentCode());
+            // Lưu Document
+            Document document = documentMapper.toDocument(request);
+            document.setSenderOrgId(senderId);
+            document = documentRepository.saveAndFlush(document);
+            log.info("[exchangeDocument] Lưu document thành công: documentId={}, code={}",
+                    document.getId(), document.getDocumentCode());
 
-        // Lưu DocumentVersion - dùng storagePath và payloadChecksum từ request
-        // (Client đã tự upload file lên MinIO và tính SHA-256 trước khi gọi API)
-        DocumentVersion existDocumentVersion = documentVersionRepository
-                .findTopByDocumentIdOrderByVersionNoDesc(document.getId())
-                .orElse(null);
-        Integer versionNo = existDocumentVersion != null ? existDocumentVersion.getVersionNo() + 1 : 1;
+            // Lưu DocumentVersion - dùng storagePath và payloadChecksum từ request
+            // (Client đã tự upload file lên MinIO và tính SHA-256 trước khi gọi API)
+            DocumentVersion existDocumentVersion = documentVersionRepository
+                    .findTopByDocumentIdOrderByVersionNoDesc(document.getId())
+                    .orElse(null);
+            Integer versionNo = existDocumentVersion != null ? existDocumentVersion.getVersionNo() + 1 : 1;
 
-        DocumentVersion documentVersion = DocumentVersion.builder()
-                .documentId(document.getId())
-                .versionNo(versionNo)
-                .storagePath(request.getStoragePath())
-                .checksum(request.getPayloadChecksum())
-                .fileSize(null)  // Client không bắt buộc truyền fileSize
-                .createdBy(registryService.getOrganizationNameById(senderId))
-                .build();
-
-        documentVersionRepository.save(documentVersion);
-        log.info("[exchangeDocument] Lưu document version thành công: documentId={}, version={}, path={}",
-                document.getId(), versionNo, request.getStoragePath());
-
-
-
-        // Tạo ExchangeTransactions cho từng receiver
-        List<ExchangeDocumentResponse> exchangeDocumentResponses = new ArrayList<>();
-        final Long finalDocumentId = document.getId();
-        List<ExchangeTransactions> listTransaction = new ArrayList<>();
-        for (Long receiverId : receiverIds) {
-            String transactionCode = "TXN-" + Year.now().getValue() + "-" + finalDocumentId + "-" + receiverId;
-            Integer priority = NumberUtils.isNullOrNegative(request.getPriority()) ? 0 : request.getPriority();
-
-            ExchangeTransactions transaction = ExchangeTransactions.builder()
-                    .transactionCode(transactionCode)
-                    .documentId(finalDocumentId)
-                    .senderOrgId(senderId)
-                    .receiverOrgId(receiverId)
-                    .priority(priority)
-                    // Sau khi qua filter xác minh chữ ký thành công → trạng thái VALIDATED
-                    .currentStatus(TransactionStatus.VALIDATED)
-                    .signatureStatus(SignatureStatus.VALID)
+            DocumentVersion documentVersion = DocumentVersion.builder()
+                    .documentId(document.getId())
+                    .versionNo(versionNo)
+                    .storagePath(request.getStoragePath())
+                    .checksum(request.getPayloadChecksum())
+                    .fileSize(null)  // Client không bắt buộc truyền fileSize
+                    .createdBy(registryService.getOrganizationNameById(senderId))
                     .build();
-            listTransaction.add(transaction);
+
+            documentVersionRepository.save(documentVersion);
+            log.info("[exchangeDocument] Lưu document version thành công: documentId={}, version={}, path={}",
+                    document.getId(), versionNo, request.getStoragePath());
 
 
-            exchangeDocumentResponses.add(
-                    ExchangeDocumentResponse.builder()
-                            .transactionCode(transactionCode)
-                            .currentStatus(TransactionStatus.VALIDATED)
-                            .build()
-            );
+
+            // Tạo ExchangeTransactions cho từng receiver
+            List<ExchangeDocumentResponse> exchangeDocumentResponses = new ArrayList<>();
+            final Long finalDocumentId = document.getId();
+            List<ExchangeTransactions> listTransaction = new ArrayList<>();
+            for (Long receiverId : receiverIds) {
+                String transactionCode = "TXN-" + Year.now().getValue() + "-" + finalDocumentId + "-" + receiverId;
+                Integer priority = NumberUtils.isNullOrNegative(request.getPriority()) ? 0 : request.getPriority();
+
+                ExchangeTransactions transaction = ExchangeTransactions.builder()
+                        .transactionCode(transactionCode)
+                        .documentId(finalDocumentId)
+                        .senderOrgId(senderId)
+                        .receiverOrgId(receiverId)
+                        .priority(priority)
+                        // Sau khi qua filter xác minh chữ ký thành công → trạng thái VALIDATED
+                        .currentStatus(TransactionStatus.VALIDATED)
+                        .signatureStatus(SignatureStatus.VALID)
+                        .build();
+                listTransaction.add(transaction);
+
+
+                exchangeDocumentResponses.add(
+                        ExchangeDocumentResponse.builder()
+                                .transactionCode(transactionCode)
+                                .currentStatus(TransactionStatus.VALIDATED)
+                                .build()
+                );
+            }
+            listTransaction = exchangeTransactionsRepository.saveAll(listTransaction);
+            outboxEventRepository.saveAll(listTransaction.stream()
+                    .map(this::toRoutingOutboxEvent)
+                    .toList());
+            updateIdempotencyAfterCommit(redisIdempotencyKey);
+            return exchangeDocumentResponses;
+        } catch (Exception e) {
+            redisTemplate.delete(redisIdempotencyKey);
+            throw e;
         }
-        listTransaction = exchangeTransactionsRepository.saveAll(listTransaction);
-        outboxEventRepository.saveAll(listTransaction.stream()
-                .map(this::toRoutingOutboxEvent)
-                .toList());
-        return exchangeDocumentResponses;
+    }
+    private void updateIdempotencyAfterCommit(String redisKey) {
+
+        TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        redisTemplate.opsForValue().set(
+                                redisKey,
+                                IDEMPOTENCY_COMPLETED_VALUE,
+                                Duration.ofMinutes(10)
+                        );
+                    }
+
+                }
+        );
+
+    }
+
+    private String buildExchangeDocumentIdempotencyKey(String idempotencyKey) {
+        return EXCHANGE_DOCUMENT_IDEMPOTENCY_KEY_PREFIX + idempotencyKey;
     }
 
     private OutboxEvent toRoutingOutboxEvent(ExchangeTransactions transaction) {

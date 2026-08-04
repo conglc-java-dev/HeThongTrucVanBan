@@ -10,7 +10,7 @@ import com.TrucVanban.exchange.dto.response.TransactionSendStatusResponse;
 import java.util.List;
 
 public interface ExchangeService {
-    List<ExchangeDocumentResponse> exchangeDocument(ExchangeDocumentRequest request);
+    List<ExchangeDocumentResponse> exchangeDocument(ExchangeDocumentRequest request, String idempotencyKey);
     ReceiveDocumentResponse ackDocument(ReceiveDocumentRequest request);
     TransactionSendStatusResponse getTransactionStatus(String senderCode, String transactionCode);
     List<TransactionReceivedStatusResponse> getTransactionReceivedStatus(String receiverCode);
