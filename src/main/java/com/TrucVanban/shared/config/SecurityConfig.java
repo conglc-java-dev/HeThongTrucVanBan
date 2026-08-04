@@ -2,6 +2,9 @@ package com.TrucVanban.shared.config;
 
 import com.TrucVanban.exchange.service.AuditLogService;
 import com.TrucVanban.registry.service.RegistryService;
+import com.TrucVanban.shared.security.hmac.HmacAuthenticationFilter;
+import com.TrucVanban.shared.security.hmac.HmacAuthenticationService;
+import com.TrucVanban.shared.security.hmac.HmacProperties;
 import com.TrucVanban.shared.utils.CanonicalStringBuilder;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jose.jwk.source.ImmutableSecret;
@@ -61,9 +64,19 @@ public class SecurityConfig {
 
         return new SignatureVerificationFilter(registryService, auditLogService, objectMapper, canonicalStringBuilder);
     }
+
+    @Bean
+    public HmacAuthenticationFilter hmacAuthenticationFilter(
+            HmacAuthenticationService hmacAuthenticationService,
+            HmacProperties hmacProperties,
+            AuditLogService auditLogService) {
+        return new HmacAuthenticationFilter(hmacAuthenticationService, hmacProperties, auditLogService);
+    }
+
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http,
-                                                   SignatureVerificationFilter signatureVerificationFilter) throws Exception {
+                                                   SignatureVerificationFilter signatureVerificationFilter,
+                                                   HmacAuthenticationFilter hmacAuthenticationFilter) throws Exception {
         http
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
@@ -73,13 +86,18 @@ public class SecurityConfig {
                                 "/swagger-ui/**",
                                 "/v3/api-docs/**",
                                 "/auth/login",
-                                "/auth/refresh"
+                                "/auth/refresh",
+                                "/simulator/**",
+                                "/registry/**", //temp
+                                "/mock/**",
+                                "/exchange"
                         ).permitAll()
                         .anyRequest().authenticated()
                 )
                 .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .addFilterAfter(signatureVerificationFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterAfter(signatureVerificationFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(hmacAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
 

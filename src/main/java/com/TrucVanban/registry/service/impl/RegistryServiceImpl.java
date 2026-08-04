@@ -17,6 +17,8 @@ import com.TrucVanban.registry.service.RegistryService;
 import com.TrucVanban.registry.validator.OrganizationStateTransitionValidator;
 import com.TrucVanban.shared.exception.DuplicateResourceException;
 import com.TrucVanban.shared.exception.ResourceNotFoundException;
+import com.TrucVanban.shared.security.hmac.ApiKeyCacheService;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.Cacheable;
@@ -39,6 +41,7 @@ public class RegistryServiceImpl implements RegistryService {
     private final OrganizationMapper organizationMapper;
     private final SlaConfigMapper slaConfigMapper;
     private final OrganizationStateTransitionValidator organizationStateTransitionValidator;
+    private final ApiKeyCacheService apiKeyCacheService;
 
     @Override
     @Transactional
@@ -77,6 +80,12 @@ public class RegistryServiceImpl implements RegistryService {
         } else if (target == OrganizationStatus.ACTIVE) {
             organization.setRejectReason(null);
         }
+        
+        // Clear API key cache (organization_status=REJECTED/SUSPENDED)
+        if (target == OrganizationStatus.REJECTED || target == OrganizationStatus.SUSPENDED) {
+            apiKeyCacheService.evictAgencyCache(organization.getId());
+        }
+        
         organizationRepository.save(organization);
 
         log.info("[RegistryService] Cập nhật trạng thái tổ chức: code={}, {} → {}", code, current, target);
