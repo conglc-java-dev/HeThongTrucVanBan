@@ -4,6 +4,9 @@ import com.TrucVanban.auth.enums.UserStatus;
 import com.TrucVanban.auth.repository.UserRepository;
 import com.TrucVanban.exchange.service.AuditLogService;
 import com.TrucVanban.registry.service.RegistryService;
+import com.TrucVanban.shared.security.hmac.HmacAuthenticationFilter;
+import com.TrucVanban.shared.security.hmac.HmacAuthenticationService;
+import com.TrucVanban.shared.security.hmac.HmacProperties;
 import com.TrucVanban.shared.utils.CanonicalStringBuilder;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jose.jwk.source.ImmutableSecret;
@@ -18,11 +21,10 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
-import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
-import org.springframework.security.oauth2.core.OAuth2Error;
-import org.springframework.security.oauth2.core.OAuth2TokenValidator;
-import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
-import org.springframework.security.oauth2.jwt.*;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtEncoder;
+import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
@@ -54,9 +56,19 @@ public class SecurityConfig {
 
         return new SignatureVerificationFilter(registryService, auditLogService, objectMapper, canonicalStringBuilder);
     }
+
+    @Bean
+    public HmacAuthenticationFilter hmacAuthenticationFilter(
+            HmacAuthenticationService hmacAuthenticationService,
+            HmacProperties hmacProperties,
+            AuditLogService auditLogService) {
+        return new HmacAuthenticationFilter(hmacAuthenticationService, hmacProperties, auditLogService);
+    }
+
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http,
                                                    SignatureVerificationFilter signatureVerificationFilter,
+                                                   HmacAuthenticationFilter hmacAuthenticationFilter,
                                                    JwtAuthenticationConverter jwtAuthenticationConverter) throws Exception {
         http
                 .csrf(AbstractHttpConfigurer::disable)
@@ -67,13 +79,18 @@ public class SecurityConfig {
                                 "/swagger-ui/**",
                                 "/v3/api-docs/**",
                                 "/auth/login",
-                                "/auth/refresh"
+                                "/auth/refresh",
+                                "/simulator/**",
+                                "/registry/**", //temp
+                                "/mock/**",
+                                "/exchange"
                         ).permitAll()
                         .anyRequest().authenticated()
                 )
                 .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter)))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .addFilterAfter(signatureVerificationFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterAfter(signatureVerificationFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(hmacAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
 
@@ -97,8 +114,6 @@ public class SecurityConfig {
         NimbusJwtDecoder jwtDecoder = NimbusJwtDecoder.withSecretKey(secretKey)
                 .macAlgorithm(org.springframework.security.oauth2.jose.jws.MacAlgorithm.HS256)
                 .build();
-
-        jwtDecoder.setJwtValidator(new JwtTimestampValidator());
 
         return jwtDecoder;
     }
