@@ -1,5 +1,7 @@
 package com.TrucVanban.shared.config;
 
+import com.TrucVanban.auth.enums.UserStatus;
+import com.TrucVanban.auth.repository.UserRepository;
 import com.TrucVanban.exchange.service.AuditLogService;
 import com.TrucVanban.registry.service.RegistryService;
 import com.TrucVanban.shared.security.hmac.HmacAuthenticationFilter;
@@ -11,22 +13,14 @@ import com.nimbusds.jose.jwk.source.ImmutableSecret;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
-import com.TrucVanban.auth.entity.User;
-import com.TrucVanban.auth.enums.UserStatus;
-import com.TrucVanban.auth.repository.UserRepository;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
-import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
-import org.springframework.security.oauth2.core.OAuth2Error;
-import org.springframework.security.oauth2.core.OAuth2TokenValidator;
-import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
-import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
-import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
@@ -43,8 +37,6 @@ import java.util.Collection;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-
-import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 
 @Configuration
 @EnableWebSecurity
@@ -76,7 +68,8 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http,
                                                    SignatureVerificationFilter signatureVerificationFilter,
-                                                   HmacAuthenticationFilter hmacAuthenticationFilter) throws Exception {
+                                                   HmacAuthenticationFilter hmacAuthenticationFilter,
+                                                   JwtAuthenticationConverter jwtAuthenticationConverter) throws Exception {
         http
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
@@ -94,7 +87,7 @@ public class SecurityConfig {
                         ).permitAll()
                         .anyRequest().authenticated()
                 )
-                .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())))
+                .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter)))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .addFilterAfter(signatureVerificationFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterAfter(hmacAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
@@ -115,29 +108,12 @@ public class SecurityConfig {
     }
 
     @Bean
-    public JwtDecoder jwtDecoder(StringRedisTemplate redisTemplate, UserRepository userRepository) {
+    public JwtDecoder jwtDecoder() {
         byte[] bytes = java.util.Base64.getDecoder().decode(jwtSecret);
         SecretKeySpec secretKey = new SecretKeySpec(bytes, "HmacSHA256");
         NimbusJwtDecoder jwtDecoder = NimbusJwtDecoder.withSecretKey(secretKey)
                 .macAlgorithm(org.springframework.security.oauth2.jose.jws.MacAlgorithm.HS256)
                 .build();
-
-        OAuth2TokenValidator<Jwt> withClockSkew = new JwtTimestampValidator();
-        OAuth2TokenValidator<Jwt> customValidator = jwt -> {
-            String tokenValue = jwt.getTokenValue();
-            if (redisTemplate.hasKey("blacklist:" + tokenValue)) {
-                return OAuth2TokenValidatorResult.failure(new OAuth2Error("invalid_token", "Token is blacklisted", null));
-            }
-            String username = jwt.getSubject();
-            User user = userRepository.findByUsername(username).orElse(null);
-            if (user == null || user.getStatus() != UserStatus.ACTIVE) {
-                return OAuth2TokenValidatorResult.failure(new OAuth2Error("invalid_token", "User is locked or not found", null));
-            }
-            return OAuth2TokenValidatorResult.success();
-        };
-
-        OAuth2TokenValidator<Jwt> validator = new DelegatingOAuth2TokenValidator<>(withClockSkew, customValidator);
-        jwtDecoder.setJwtValidator(validator);
 
         return jwtDecoder;
     }
@@ -149,9 +125,18 @@ public class SecurityConfig {
     }
 
     @Bean
-    public JwtAuthenticationConverter jwtAuthenticationConverter() {
+    public JwtAuthenticationConverter jwtAuthenticationConverter(StringRedisTemplate redisTemplate, UserRepository userRepository) {
         JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
         converter.setJwtGrantedAuthoritiesConverter(jwt -> {
+            String tokenValue = jwt.getTokenValue();
+            if (redisTemplate.hasKey("blacklist:" + tokenValue)) {
+                throw new org.springframework.security.oauth2.core.OAuth2AuthenticationException("Token bị thu hồi hoặc không hợp lệ");
+            }
+            String username = jwt.getSubject();
+            if (!userRepository.existsByUsernameAndStatus(username, UserStatus.ACTIVE)) {
+                throw new org.springframework.security.oauth2.core.OAuth2AuthenticationException("Người dùng bị khóa hoặc không tồn tại");
+            }
+
             String type = jwt.getClaimAsString("type");
             if (!"ACCESS".equals(type)) {
                 throw new org.springframework.security.oauth2.core.OAuth2AuthenticationException("Chỉ Access Token mới được phép truy cập API");
@@ -159,7 +144,7 @@ public class SecurityConfig {
 
             Collection<String> roles = jwt.getClaimAsStringList("roles");
             Collection<String> permissions = jwt.getClaimAsStringList("permissions");
-            
+
             Stream<String> rolesStream = roles != null ? roles.stream() : Stream.empty();
             Stream<String> permissionsStream = permissions != null ? permissions.stream() : Stream.empty();
             
@@ -175,5 +160,11 @@ public class SecurityConfig {
     @Bean
     public org.springframework.security.crypto.password.PasswordEncoder passwordEncoder() {
         return new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder();
+    }
+
+    @Bean
+    public org.springframework.security.authentication.AuthenticationManager authenticationManager(
+            org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration config) throws Exception {
+        return config.getAuthenticationManager();
     }
 }
