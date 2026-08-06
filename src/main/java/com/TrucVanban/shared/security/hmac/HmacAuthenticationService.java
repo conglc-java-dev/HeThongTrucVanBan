@@ -28,33 +28,33 @@ public class HmacAuthenticationService {
         String signatureHeader = request.getHeader(hmacProperties.getHeader().getSignature());
 
         if (!StringUtils.hasText(apiKey) || !StringUtils.hasText(timestamp) || !StringUtils.hasText(nonce) || !StringUtils.hasText(signatureHeader)) {
-            throw new HmacAuthenticationException.MissingAuthHeaderException("Missing required HMAC authentication headers");
+            throw new HmacAuthenticationException.MissingAuthHeaderException("Thiếu các header xác thực HMAC bắt buộc");
         }
 
         long timestampSeconds;
         try {
             timestampSeconds = Long.parseLong(timestamp);
         } catch (NumberFormatException e) {
-            throw new HmacAuthenticationException.TimestampSkewException("Invalid timestamp format");
+            throw new HmacAuthenticationException.TimestampSkewException("Định dạng timestamp không hợp lệ");
         }
 
         long now = OffsetDateTime.now().toEpochSecond();
         long drift = Math.abs(now - timestampSeconds);
         if (drift > hmacProperties.getClockSkew().getSeconds()) {
-            throw new HmacAuthenticationException.TimestampSkewException("Timestamp skew exceeds allowed window");
+            throw new HmacAuthenticationException.TimestampSkewException("Độ lệch thời gian vượt quá giới hạn cho phép");
         }
 
         ApiKeyCacheValue apiKeyCacheValue = apiKeyCacheService.getApiKey(apiKey);
         if (apiKeyCacheValue == null) {
-            throw new HmacAuthenticationException.ApiKeyInvalidException("API key is invalid or inactive");
+            throw new HmacAuthenticationException.ApiKeyInvalidException("API key không hợp lệ hoặc không hoạt động");
         }
 
         if (apiKeyCacheValue.expiresAt() != null && OffsetDateTime.now().isAfter(apiKeyCacheValue.expiresAt())) {
-            throw new HmacAuthenticationException.ApiKeyExpiredException("API key has expired");
+            throw new HmacAuthenticationException.ApiKeyExpiredException("API key đã hết hạn");
         }
 
         if (!"ACTIVE".equals(apiKeyCacheValue.keyStatus()) || !"ACTIVE".equals(apiKeyCacheValue.agencyStatus())) {
-            throw new HmacAuthenticationException.AgencyInactiveException("Agency or API key is not active");
+            throw new HmacAuthenticationException.AgencyInactiveException("Cơ quan hoặc API key không hoạt động");
         }
 
         byte[] body = readRequestBody(request);
@@ -72,11 +72,11 @@ public class HmacAuthenticationService {
         String expectedSignature = signatureCalculator.calculateSignature(apiKeyCacheValue.secret(), canonicalString);
 
         if (!MessageDigest.isEqual(expectedSignature.getBytes(StandardCharsets.UTF_8), normalizedSignature.getBytes(StandardCharsets.UTF_8))) {
-            throw new HmacAuthenticationException.SignatureInvalidException("Signature mismatch");
+            throw new HmacAuthenticationException.SignatureInvalidException("Chữ ký không khớp");
         }
 
         if (!nonceStore.reserveNonce(apiKey, nonce, hmacProperties.getNonceTtl())) {
-            throw new HmacAuthenticationException.ReplayDetectedException("Replay detected");
+            throw new HmacAuthenticationException.ReplayDetectedException("Phát hiện yêu cầu trùng lặp");
         }
 
         request.setAttribute("verified_org_id", apiKeyCacheValue.agencyId());
@@ -102,11 +102,11 @@ public class HmacAuthenticationService {
             }
             long contentLength = request.getContentLengthLong();
             if (contentLength > 0 && contentLength > hmacProperties.getMaxBodySize()) {
-                throw new IllegalStateException("Request body exceeds configured max size");
+                throw new IllegalStateException("Kích thước body vượt quá giới hạn cho phép");
             }
             return request.getInputStream().readAllBytes();
         } catch (IOException e) {
-            throw new IllegalStateException("Failed to read request body for HMAC validation", e);
+            throw new IllegalStateException("Không thể đọc request body để xác thực HMAC", e);
         }
     }
 }
