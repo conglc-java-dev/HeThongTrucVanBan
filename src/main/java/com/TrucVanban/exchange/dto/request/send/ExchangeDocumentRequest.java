@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
-import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
 import java.util.List;
@@ -47,10 +46,6 @@ public class ExchangeDocumentRequest {
     private JsonNode extractedMetadata;
     private String summary;
 
-    /**
-     * Setter cho extractedMetadata khi nhận String (từ form-data cũ).
-     * Jackson có thể gọi setter này nếu type mismatch → cần check null.
-     */
     @SuppressWarnings("unused")
     public void setExtractedMetadata(String extractedMetadataStr) throws JsonProcessingException {
         if (extractedMetadataStr != null && !extractedMetadataStr.isBlank()) {
@@ -59,11 +54,6 @@ public class ExchangeDocumentRequest {
             this.extractedMetadata = null;
         }
     }
-
-    /**
-     * Setter cho extractedMetadata khi nhận JsonNode trực tiếp (từ JSON body).
-     * Jackson sẽ ưu tiên setter này khi deserialize JSON object/null.
-     */
     @SuppressWarnings("unused")
     public void setExtractedMetadata(JsonNode extractedMetadata) {
         this.extractedMetadata = extractedMetadata;

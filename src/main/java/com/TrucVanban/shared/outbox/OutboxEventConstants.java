@@ -7,4 +7,5 @@ public final class OutboxEventConstants {
 
     public static final String AGGREGATE_TYPE_EXCHANGE_TRANSACTION = "EXCHANGE_TRANSACTION";
     public static final String EVENT_TYPE_ROUTING_REQUEST = "ROUTING_REQUEST";
+    public static final String EVENT_TYPE_DISTRIBUTION_REQUEST = "DISTRIBUTION_REQUEST";
 }

@@ -73,3 +73,5 @@ security:
 app:
   client-simulator:
     gateway-url: ${CLIENT_SIMULATOR_GATEWAY_URL:http://localhost:8080/api/v1/exchange}
+    multi-sig-gateway-url: ${CLIENT_SIMULATOR_MULTI_SIG_URL:http://localhost:8080/api/v1/exchange-documents/signatures}
+    private-key-path: ${CLIENT_SIMULATOR_PRIVATE_KEY_PATH:src/main/resources/keys/simulator_private_key.pem}

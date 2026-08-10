@@ -2,7 +2,9 @@ package com.TrucVanban.exchange.controller;
 
 import com.TrucVanban.exchange.dto.request.receive.ReceiveDocumentRequest;
 import com.TrucVanban.exchange.dto.request.send.ExchangeDocumentRequest;
+import com.TrucVanban.exchange.dto.request.send.MultiSignatureRequest;
 import com.TrucVanban.exchange.dto.response.ExchangeDocumentResponse;
+import com.TrucVanban.exchange.dto.response.MultiSignatureResponse;
 import com.TrucVanban.exchange.dto.response.ReceiveDocumentResponse;
 import com.TrucVanban.exchange.dto.response.TransactionReceivedStatusResponse;
 import com.TrucVanban.exchange.dto.response.TransactionSendStatusResponse;
@@ -41,6 +43,25 @@ public class ExchangeController {
 
         return ResponseEntity.ok(response);
     }
+
+    
+    @PostMapping(value = "/exchange-documents/signatures", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<ResponseData<MultiSignatureResponse>> processMultiSignatureDocument(
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
+            @RequestBody @Valid MultiSignatureRequest request) {
+
+        MultiSignatureResponse data = exchangeService.processMultiSignatureDocument(request, idempotencyKey);
+
+        ResponseData<MultiSignatureResponse> response = ResponseData.<MultiSignatureResponse>builder()
+                .success(true)
+                .message("Xác minh chữ ký và cập nhật luồng luân chuyển thành công")
+                .data(data)
+                .build();
+
+        return ResponseEntity.ok(response);
+    }
+
+
 
     @PostMapping(value = "/ack")
     @Operation(summary = "Ghi nhận trạng thái ACK thành công")

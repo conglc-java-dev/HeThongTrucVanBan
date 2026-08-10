@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 import java.util.UUID;
@@ -50,6 +51,22 @@ public class MinioService {
                     .build());
         } catch (MinioException | IOException | InvalidKeyException | NoSuchAlgorithmException e) {
             throw new RuntimeException("Không thể lấy URL file: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Tải file từ MinIO theo object key và trả về InputStream.
+     * Dùng cho Gateway khi cần parse PDF để xác minh chữ ký.
+     * Caller có trách nhiệm đóng InputStream sau khi dùng xong.
+     */
+    public InputStream download(String objectKey) {
+        try {
+            return minioClient.getObject(GetObjectArgs.builder()
+                    .bucket(bucketName)
+                    .object(objectKey)
+                    .build());
+        } catch (MinioException | IOException | InvalidKeyException | NoSuchAlgorithmException e) {
+            throw new RuntimeException("Tải file từ MinIO thất bại: objectKey=" + objectKey + " | " + e.getMessage(), e);
         }
     }
 
