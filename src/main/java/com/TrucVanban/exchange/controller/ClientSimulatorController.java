@@ -2,7 +2,9 @@ package com.TrucVanban.exchange.controller;
 
 
 import com.TrucVanban.exchange.dto.request.send.ExchangeDocumentRequest;
+import com.TrucVanban.exchange.dto.request.send.MultiSignatureRequest;
 import com.TrucVanban.exchange.dto.request.send.SignAndBuildRequest;
+import com.TrucVanban.exchange.dto.request.send.SimulateMultiSigRequest;
 import com.TrucVanban.exchange.dto.response.FileUploadResponse;
 import com.TrucVanban.exchange.service.ClientSimulatorService;
 import com.TrucVanban.shared.ResponseData;
@@ -22,6 +24,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/simulator")
 @RequiredArgsConstructor
+@Tag(name = "Simulator", description = "Công cụ giả lập E-Office Client — Chỉ dùng cho môi trường Dev/Test")
 public class ClientSimulatorController {
 
     private final ClientSimulatorService clientSimulatorService;
@@ -53,6 +56,29 @@ public class ClientSimulatorController {
         return ResponseEntity.ok(ResponseData.<List<FileUploadResponse>>builder()
                 .success(true)
                 .message("Tải lên và băm file thành công")
+                .data(data)
+                .build());
+    }
+
+
+    @PostMapping(value = "/sign-and-build-multi-sig", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<ResponseData<MultiSignatureRequest>> signAndBuildMultiSig(
+            @RequestBody @Valid SimulateMultiSigRequest request) throws Exception {
+
+        log.info("[Simulator Controller] Giả lập ký đa chữ ký: sender={}, role={}",
+                request.getCurrentSenderCode(), request.getSignerRole());
+
+        MultiSignatureRequest data = clientSimulatorService.signAndBuildMultiSigPayload(request);
+
+        int stepNumber = (request.getExistingSignatures() != null
+                ? request.getExistingSignatures().size() : 0) + 1;
+
+        return ResponseEntity.ok(ResponseData.<MultiSignatureRequest>builder()
+                .success(true)
+                .message(String.format(
+                        "Ký giả lập thành công cho [%s] — Bước #%d (%s). " +
+                        "Copy toàn bộ object 'data' và nộp sang POST /api/v1/exchange-documents/signatures",
+                        request.getCurrentSenderCode(), stepNumber, request.getSignerRole()))
                 .data(data)
                 .build());
     }

@@ -4,6 +4,7 @@ import com.TrucVanban.auth.enums.UserStatus;
 import com.TrucVanban.auth.repository.UserRepository;
 import com.TrucVanban.exchange.service.AuditLogService;
 import com.TrucVanban.registry.service.RegistryService;
+import com.TrucVanban.shared.security.filter.SignatureVerificationFilter;
 import com.TrucVanban.shared.security.hmac.HmacAuthenticationFilter;
 import com.TrucVanban.shared.security.hmac.HmacAuthenticationService;
 import com.TrucVanban.shared.security.hmac.HmacProperties;
@@ -83,7 +84,8 @@ public class SecurityConfig {
                                 "/simulator/**",
                                 "/registry/**", //temp
                                 "/mock/**",
-                                "/exchange"
+                                "/exchange",
+                                "/exchange-documents/signatures"  // Đa chữ ký — xác thực qua Filter 2 tầng
                         ).permitAll()
                         .anyRequest().authenticated()
                 )

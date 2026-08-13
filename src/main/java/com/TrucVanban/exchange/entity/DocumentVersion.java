@@ -29,8 +29,9 @@ public class DocumentVersion {
     @Column(name = "storage_path", nullable = false, length = 500)
     private String storagePath;
 
-    @Column(nullable = false, length = 64)
+    @Column(length = 64)
     private String checksum;
+
 
     @Column(name = "file_size")
     private Long fileSize;

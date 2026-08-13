@@ -131,7 +131,27 @@
 			<groupId>com.github.ben-manes.caffeine</groupId>
 			<artifactId>caffeine</artifactId>
 		</dependency>
+
+		<!-- PDF Signature Validation - Apache PDFBox (parse cấu trúc PDF / Sig Dictionary / ByteRange) -->
+		<dependency>
+			<groupId>org.apache.pdfbox</groupId>
+			<artifactId>pdfbox</artifactId>
+			<version>3.0.3</version>
+		</dependency>
+
+		<!-- Bouncy Castle - Decode PKCS#7 CMS blob, verify RSA signature trong PDF thực tế -->
+		<dependency>
+			<groupId>org.bouncycastle</groupId>
+			<artifactId>bcpkix-jdk18on</artifactId>
+			<version>1.78.1</version>
+		</dependency>
+		<dependency>
+			<groupId>org.bouncycastle</groupId>
+			<artifactId>bcprov-jdk18on</artifactId>
+			<version>1.78.1</version>
+		</dependency>
 	</dependencies>
+
 
 	<build>
 		<plugins>
