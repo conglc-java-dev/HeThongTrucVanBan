@@ -203,6 +203,13 @@ public class RegistryServiceImpl implements RegistryService {
     }
 
     @Override
+    public Organization getOrganizationById(Long id) {
+        return organizationRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy tổ chức với id: " + id));
+    }
+
+
+    @Override
     public boolean checkCertificate(String signature, Long organizationId) {
         return certificateRepository.findByOrganizationIdAndStatus(organizationId, CertificateStatus.ACTIVE)
                 .map(cert -> !LocalDateTime.now().isAfter(cert.getExpiredAt()) && cert.getPublicKey().equals(signature))

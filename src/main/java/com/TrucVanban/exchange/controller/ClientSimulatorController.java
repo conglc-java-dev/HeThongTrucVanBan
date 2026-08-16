@@ -7,7 +7,6 @@ import com.TrucVanban.exchange.dto.response.FileUploadResponse;
 import com.TrucVanban.exchange.service.ClientSimulatorService;
 import com.TrucVanban.shared.ResponseData;
 import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -34,13 +33,14 @@ public class ClientSimulatorController {
             @RequestParam List<String> receiverCodes,
             @RequestParam String documentCode,
             @RequestParam String certificateSerialNumber,
-            @RequestParam(required = false, defaultValue = "1") Integer priority) throws Exception {
+            @RequestParam(required = false, defaultValue = "1") Integer priority,
+            @RequestParam String idempotencyKey) throws Exception {
 
         log.info("[Simulator Controller] Tiếp nhận yêu cầu giả lập gửi văn bản từ Client...");
 
         // Đẩy toàn bộ tác vụ nặng (Upload, Băm, Ký, Gửi) xuống tầng Service
         Object response = clientSimulatorService.processAndSend(
-                file, senderCode, receiverCodes, documentCode, certificateSerialNumber, priority);
+                file, senderCode, receiverCodes, documentCode, certificateSerialNumber, priority, idempotencyKey);
 
         return ResponseEntity.ok(response);
     }

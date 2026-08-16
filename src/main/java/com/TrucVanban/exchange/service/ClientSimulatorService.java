@@ -13,7 +13,8 @@ public interface ClientSimulatorService {
                           List<String> receiverCodes,
                           String documentCode,
                           String certificateSerialNumber,
-                          Integer priority) throws Exception;
+                          Integer priority,
+                          String idempotencyKey) throws Exception;
 
     List<FileUploadResponse> uploadFiles(MultipartFile[] files) throws Exception;
 

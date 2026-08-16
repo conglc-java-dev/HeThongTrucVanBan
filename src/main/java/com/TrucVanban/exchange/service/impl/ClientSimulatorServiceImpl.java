@@ -12,6 +12,7 @@ import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -81,7 +82,7 @@ public class ClientSimulatorServiceImpl implements ClientSimulatorService {
         internalRequest.setTimestamp(currentTimestamp);
 
         String canonicalString = canonicalStringBuilder.build(internalRequest);
-        PrivateKey privateKey = loadPrivateKeyFromPem(PRIVATE_KEY_PATH);
+        PrivateKey privateKey = loadPrivateKeyFromPem();
 
         Signature signatureInstance = Signature.getInstance("SHA256withRSA");
         signatureInstance.initSign(privateKey);
@@ -94,7 +95,12 @@ public class ClientSimulatorServiceImpl implements ClientSimulatorService {
 
     @Override
     public Object processAndSend(MultipartFile file, String senderCode, List<String> receiverCodes,
-                                 String documentCode, String certificateSerialNumber, Integer priority) throws Exception {
+                                 String documentCode, String certificateSerialNumber, Integer priority,
+                                 String idempotencyKey) throws Exception {
+
+        if (!StringUtils.hasText(idempotencyKey)) {
+            throw new IllegalArgumentException("Idempotency-Key must be provided by the caller");
+        }
 
         // 1. Upload & Hash
         String objectKey = minioService.upload(file);
@@ -121,6 +127,7 @@ public class ClientSimulatorServiceImpl implements ClientSimulatorService {
 
         return restClient.post()
                 .uri(gatewayUrl)
+                .header("Idempotency-Key", idempotencyKey)
                 .contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.APPLICATION_JSON)
                 .body(finalPayload)
@@ -140,8 +147,8 @@ public class ClientSimulatorServiceImpl implements ClientSimulatorService {
     }
 
     // Đọc Private Key từ Server
-    private PrivateKey loadPrivateKeyFromPem(String filePath) throws Exception {
-        String keyContent = Files.readString(Paths.get(filePath));
+    private PrivateKey loadPrivateKeyFromPem() throws Exception {
+        String keyContent = Files.readString(Paths.get(PRIVATE_KEY_PATH));
         keyContent = keyContent.replace("-----BEGIN PRIVATE KEY-----", "")
                 .replace("-----END PRIVATE KEY-----", "")
                 .replace("-----BEGIN RSA PRIVATE KEY-----", "")
