@@ -22,9 +22,8 @@ public class RefreshToken {
     @Column(nullable = false, unique = true, columnDefinition = "TEXT")
     private String token;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = false)
-    private User user;
+    @Column(name = "user_id", nullable = false)
+    private Long userId;
 
     @Column(nullable = false, name = "expires_at")
     private Instant expiresAt;
