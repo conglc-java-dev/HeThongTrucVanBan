@@ -17,6 +17,7 @@ import com.TrucVanban.exchange.mapper.DocumentMapper;
 import com.TrucVanban.exchange.repository.*;
 import com.TrucVanban.exchange.service.AuditLogService;
 import com.TrucVanban.exchange.service.ExchangeService;
+import com.TrucVanban.registry.entity.Organization;
 import com.TrucVanban.registry.service.RegistryService;
 import com.TrucVanban.routing.dto.request.RoutingRequest;
 import com.TrucVanban.shared.exception.*;
@@ -75,7 +76,7 @@ public class ExchangeServiceImpl implements ExchangeService {
 
     @Override
     @Transactional
-    public List<ExchangeDocumentResponse> exchangeDocument(ExchangeDocumentRequest request, String idempotencyKey) {
+    public  List<ExchangeDocumentResponse> exchangeDocument(ExchangeDocumentRequest request, String idempotencyKey) {
         log.info("[exchangeDocument] Bắt đầu gửi văn bản: sender={}, receivers={}",
                 request.getSenderCode(), request.getReceiverCodes());
         if (StringUtils.isNullOrBlank(idempotencyKey)) {
@@ -159,11 +160,29 @@ public class ExchangeServiceImpl implements ExchangeService {
                 );
             }
             listTransaction = exchangeTransactionsRepository.saveAll(listTransaction);
+
+            // Load sender/receiver organization 1 lần để bơm vào Outbox message
+            Organization sender = registryService.getOrganizationById(senderId);
+            List<Organization> receivers = receiverIds.stream()
+                    .map(registryService::getOrganizationById)
+                    .toList();
+
+            // effectively final reference để dùng trong lambda
+            final Document finalDocument = document;
+            final DocumentVersion finalDocumentVersion = documentVersion;
+
             outboxEventRepository.saveAll(listTransaction.stream()
-                    .map(this::toRoutingOutboxEvent)
+                    .map(tx -> {
+                        Organization receiver = receivers.stream()
+                                .filter(r -> r.getId().equals(tx.getReceiverOrgId()))
+                                .findFirst()
+                                .orElseThrow();
+                        return toRoutingOutboxEvent(tx, finalDocument, finalDocumentVersion, sender, receiver);
+                    })
                     .toList());
             updateIdempotencyAfterCommit(redisIdempotencyKey);
             return exchangeDocumentResponses;
+
         } catch (Exception e) {
             redisTemplate.delete(redisIdempotencyKey);
             throw e;
@@ -191,9 +210,32 @@ public class ExchangeServiceImpl implements ExchangeService {
         return EXCHANGE_DOCUMENT_IDEMPOTENCY_KEY_PREFIX + idempotencyKey;
     }
 
-    private OutboxEvent toRoutingOutboxEvent(ExchangeTransactions transaction) {
+    private OutboxEvent toRoutingOutboxEvent(
+            ExchangeTransactions transaction,
+            Document document,
+            DocumentVersion version,
+            Organization sender,
+            Organization receiver) {
+
         RoutingRequest routingRequest = RoutingRequest.builder()
                 .transactionCode(transaction.getTransactionCode())
+                .priority(transaction.getPriority())
+                // Document info
+                .documentCode(document.getDocumentCode())
+                .title(document.getTitle())
+                .summary(document.getSummary())
+                .documentType(document.getDocumentType())
+                .extractedMetadata(document.getExtractedMetadata())
+                // File info
+                .storagePath(version.getStoragePath())
+                .versionNo(version.getVersionNo())
+                // Sender info
+                .senderCode(sender.getCode())
+                .senderName(sender.getName())
+                // Receiver info
+                .receiverCode(receiver.getCode())
+                .receiverName(receiver.getName())
+                .receiveEndpoint(receiver.getReceiveEndpoint())
                 .build();
 
         return OutboxEvent.builder()

@@ -17,12 +17,15 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.security.KeyFactory;
 import java.security.MessageDigest;
 import java.security.PrivateKey;
@@ -108,6 +111,7 @@ public class ClientSimulatorServiceImpl implements ClientSimulatorService {
         // Flow cũ: dùng key mặc định private_key.pem trong classpath root
         PrivateKey privateKey = loadPrivateKeyFromClasspath("keys/private_key.pem");
 
+
         Signature signatureInstance = Signature.getInstance("SHA256withRSA");
         signatureInstance.initSign(privateKey);
         signatureInstance.update(canonicalString.getBytes(StandardCharsets.UTF_8));
@@ -119,7 +123,12 @@ public class ClientSimulatorServiceImpl implements ClientSimulatorService {
 
     @Override
     public Object processAndSend(MultipartFile file, String senderCode, List<String> receiverCodes,
-                                 String documentCode, String certificateSerialNumber, Integer priority) throws Exception {
+                                 String documentCode, String certificateSerialNumber, Integer priority,
+                                 String idempotencyKey) throws Exception {
+
+        if (!StringUtils.hasText(idempotencyKey)) {
+            throw new IllegalArgumentException("Idempotency-Key must be provided by the caller");
+        }
 
         // 1. Upload & Hash
         String objectKey = minioService.upload(file);
@@ -144,6 +153,7 @@ public class ClientSimulatorServiceImpl implements ClientSimulatorService {
         log.info("[Simulator] RestClient gửi tới Gateway: {}", gatewayUrl);
         return restClient.post()
                 .uri(gatewayUrl)
+                .header("Idempotency-Key", idempotencyKey)
                 .contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.APPLICATION_JSON)
                 .body(finalPayload)
@@ -261,4 +271,19 @@ public class ClientSimulatorServiceImpl implements ClientSimulatorService {
         }
         return hexString.toString();
     }
+
+//    // Đọc Private Key từ Server
+//    private PrivateKey loadPrivateKeyFromPem() throws Exception {
+//        String keyContent = Files.readString(Paths.get(PRIVATE_KEY_PATH));
+//        keyContent = keyContent.replace("-----BEGIN PRIVATE KEY-----", "")
+//                .replace("-----END PRIVATE KEY-----", "")
+//                .replace("-----BEGIN RSA PRIVATE KEY-----", "")
+//                .replace("-----END RSA PRIVATE KEY-----", "")
+//                .replaceAll("\\s+", "");
+//
+//        byte[] keyBytes = Base64.getDecoder().decode(keyContent);
+//        PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(keyBytes);
+//        KeyFactory keyFactory = KeyFactory.getInstance("RSA");
+//        return keyFactory.generatePrivate(spec);
+//    }
 }
