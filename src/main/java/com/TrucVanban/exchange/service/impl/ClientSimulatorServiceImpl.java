@@ -24,6 +24,8 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.security.KeyFactory;
 import java.security.MessageDigest;
 import java.security.PrivateKey;
@@ -108,7 +110,7 @@ public class ClientSimulatorServiceImpl implements ClientSimulatorService {
 
         // Flow cũ: dùng key mặc định private_key.pem trong classpath root
         PrivateKey privateKey = loadPrivateKeyFromClasspath("keys/private_key.pem");
-        PrivateKey privateKey = loadPrivateKeyFromPem();
+
 
         Signature signatureInstance = Signature.getInstance("SHA256withRSA");
         signatureInstance.initSign(privateKey);
@@ -270,18 +272,18 @@ public class ClientSimulatorServiceImpl implements ClientSimulatorService {
         return hexString.toString();
     }
 
-    // Đọc Private Key từ Server
-    private PrivateKey loadPrivateKeyFromPem() throws Exception {
-        String keyContent = Files.readString(Paths.get(PRIVATE_KEY_PATH));
-        keyContent = keyContent.replace("-----BEGIN PRIVATE KEY-----", "")
-                .replace("-----END PRIVATE KEY-----", "")
-                .replace("-----BEGIN RSA PRIVATE KEY-----", "")
-                .replace("-----END RSA PRIVATE KEY-----", "")
-                .replaceAll("\\s+", "");
-
-        byte[] keyBytes = Base64.getDecoder().decode(keyContent);
-        PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(keyBytes);
-        KeyFactory keyFactory = KeyFactory.getInstance("RSA");
-        return keyFactory.generatePrivate(spec);
-    }
+//    // Đọc Private Key từ Server
+//    private PrivateKey loadPrivateKeyFromPem() throws Exception {
+//        String keyContent = Files.readString(Paths.get(PRIVATE_KEY_PATH));
+//        keyContent = keyContent.replace("-----BEGIN PRIVATE KEY-----", "")
+//                .replace("-----END PRIVATE KEY-----", "")
+//                .replace("-----BEGIN RSA PRIVATE KEY-----", "")
+//                .replace("-----END RSA PRIVATE KEY-----", "")
+//                .replaceAll("\\s+", "");
+//
+//        byte[] keyBytes = Base64.getDecoder().decode(keyContent);
+//        PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(keyBytes);
+//        KeyFactory keyFactory = KeyFactory.getInstance("RSA");
+//        return keyFactory.generatePrivate(spec);
+//    }
 }
