@@ -12,6 +12,7 @@ import java.time.LocalDateTime;
 @Table(name = "document_replacements")
 @NoArgsConstructor
 @AllArgsConstructor
+@Data
 @Builder
 public class DocumentReplacement {
 

@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
-import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
 import java.util.List;
@@ -40,6 +39,8 @@ public class ExchangeDocumentRequest {
 
     @NotBlank(message = "Đường dẫn lưu trữ file (storagePath) là bắt buộc")
     private String storagePath;
+
+    private String replacedDocumentCode;
 
     private String title;
     private String documentType;
