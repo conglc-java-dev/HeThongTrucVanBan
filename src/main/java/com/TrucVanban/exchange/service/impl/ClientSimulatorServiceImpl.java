@@ -37,7 +37,6 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 
-
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -57,7 +56,6 @@ public class ClientSimulatorServiceImpl implements ClientSimulatorService {
     @Value("${app.client-simulator.multi-sig-gateway-url:http://localhost:8080/api/v1/exchange-documents/signatures}")
     String multiSigGatewayUrl;
 
-
     private static final String KEYS_CLASSPATH_DIR = "keys/";
 
     // =============================================
@@ -66,7 +64,8 @@ public class ClientSimulatorServiceImpl implements ClientSimulatorService {
 
     @Override
     public List<FileUploadResponse> uploadFiles(MultipartFile[] files) throws Exception {
-        if (files == null || files.length == 0) return new ArrayList<>();
+        if (files == null || files.length == 0)
+            return new ArrayList<>();
 
         List<FileUploadResponse> results = new ArrayList<>(files.length);
         MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -90,18 +89,17 @@ public class ClientSimulatorServiceImpl implements ClientSimulatorService {
         return results;
     }
 
-    
     @Override
     public ExchangeDocumentRequest signAndBuildPayload(SignAndBuildRequest request) throws Exception {
 
         String effectiveStoragePath = request.getStoragePath();
-        String effectiveChecksum    = request.getPayloadChecksum();
+        String effectiveChecksum = request.getPayloadChecksum();
 
         // ---- Bước 1: Vẽ dấu trực quan (nếu được yêu cầu) ----
-        VisualSignatureRequest stampCoords    = request.getStampCoords();
+        VisualSignatureRequest stampCoords = request.getStampCoords();
         VisualSignatureRequest signatureCoords = request.getSignatureCoords();
         boolean hasVisual = (stampCoords != null && stampCoords.isApplyVisual())
-                         || (signatureCoords != null && signatureCoords.isApplyVisual());
+                || (signatureCoords != null && signatureCoords.isApplyVisual());
 
         if (hasVisual) {
             log.info("[Simulator-Single] Áp dụng Visual Layers: sender={}", request.getSenderCode());
@@ -149,7 +147,7 @@ public class ClientSimulatorServiceImpl implements ClientSimulatorService {
 
     @Override
     public Object processAndSend(MultipartFile file, String senderCode, List<String> receiverCodes,
-                                 String documentCode, String certificateSerialNumber, Integer priority) throws Exception {
+            String documentCode, String certificateSerialNumber, Integer priority, String idempotencyKey) throws Exception {
 
         // 1. Upload & Hash
         String objectKey = minioService.upload(file);
@@ -172,9 +170,15 @@ public class ClientSimulatorServiceImpl implements ClientSimulatorService {
 
         // 4. Gửi sang Gateway (URL từ config, không hardcode)
         log.info("[Simulator] RestClient gửi tới Gateway: {}", gatewayUrl);
+
+        if (idempotencyKey == null || idempotencyKey.trim().isEmpty()) {
+            idempotencyKey = java.util.UUID.randomUUID().toString();
+        }
+
         return restClient.post()
                 .uri(gatewayUrl)
                 .contentType(MediaType.APPLICATION_JSON)
+                .header("Idempotency-Key", idempotencyKey)
                 .accept(MediaType.APPLICATION_JSON)
                 .body(finalPayload)
                 .retrieve()
@@ -188,11 +192,13 @@ public class ClientSimulatorServiceImpl implements ClientSimulatorService {
     /**
      * Ký nối tiếp: tùy chọn vẽ dấu trực quan trước khi ký transport.
      *
-     * <p><strong>Thứ tự quan trọng</strong>:
+     * <p>
+     * <strong>Thứ tự quan trọng</strong>:
      * <ol>
-     *   <li>Tập hợp existingSignatures từ bước trước</li>
-     *   <li>Vẽ dấu lên PDF mới (nếu applyVisual == true) → cập nhật storagePath payload</li>
-     *   <li>Ký transport signature trên payload ĐÃ có storagePath mới</li>
+     * <li>Tập hợp existingSignatures từ bước trước</li>
+     * <li>Vẽ dấu lên PDF mới (nếu applyVisual == true) → cập nhật storagePath
+     * payload</li>
+     * <li>Ký transport signature trên payload ĐÃ có storagePath mới</li>
      * </ol>
      */
     @Override
@@ -230,10 +236,10 @@ public class ClientSimulatorServiceImpl implements ClientSimulatorService {
 
         // ---- Bước 1: Vẽ dấu trực quan (nếu được yêu cầu) ----
         String effectiveStoragePath = request.getStoragePath();
-        VisualSignatureRequest stampCoords    = request.getStampCoords();
+        VisualSignatureRequest stampCoords = request.getStampCoords();
         VisualSignatureRequest signatureCoords = request.getSignatureCoords();
         boolean hasVisual = (stampCoords != null && stampCoords.isApplyVisual())
-                         || (signatureCoords != null && signatureCoords.isApplyVisual());
+                || (signatureCoords != null && signatureCoords.isApplyVisual());
 
         if (hasVisual) {
             log.info("[Simulator-MultiSig] Áp dụng Visual Layers: sender={}",
@@ -251,7 +257,7 @@ public class ClientSimulatorServiceImpl implements ClientSimulatorService {
         payload.setCurrentSenderCode(request.getCurrentSenderCode());
         payload.setRoutingList(request.getRoutingList());
         payload.setDistributionList(request.getDistributionList());
-        payload.setStoragePath(effectiveStoragePath);   // ← path đã cập nhật (có dấu)
+        payload.setStoragePath(effectiveStoragePath); // ← path đã cập nhật (có dấu)
         payload.setRequestTimestamp(currentTimestamp);
         payload.setSignatures(signatures);
         // Metadata truyền xuyên suốt luồng ký nối tiếp
@@ -278,7 +284,6 @@ public class ClientSimulatorServiceImpl implements ClientSimulatorService {
         return payload;
     }
 
-
     private PrivateKey loadPrivateKeyForSender(String senderCode) throws Exception {
         String keyFileName = KEYS_CLASSPATH_DIR + senderCode + "_private_key.pem";
         log.info("[Simulator-MultiSig] Tải Private Key: {}", keyFileName);
@@ -287,7 +292,7 @@ public class ClientSimulatorServiceImpl implements ClientSimulatorService {
         } catch (IOException e) {
             throw new IllegalStateException(
                     "Không tìm thấy Private Key cho [" + senderCode + "]. " +
-                    "Kiểm tra file: src/main/resources/" + keyFileName);
+                            "Kiểm tra file: src/main/resources/" + keyFileName);
         } catch (Exception e) {
             throw new IllegalStateException(
                     "File PEM của [" + senderCode + "] không hợp lệ: " + e.getMessage());
@@ -319,7 +324,8 @@ public class ClientSimulatorServiceImpl implements ClientSimulatorService {
         StringBuilder hexString = new StringBuilder();
         for (byte b : hashBytes) {
             String hex = Integer.toHexString(0xff & b);
-            if (hex.length() == 1) hexString.append('0');
+            if (hex.length() == 1)
+                hexString.append('0');
             hexString.append(hex);
         }
         return hexString.toString();

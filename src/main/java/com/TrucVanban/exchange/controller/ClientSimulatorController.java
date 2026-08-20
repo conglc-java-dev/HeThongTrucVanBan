@@ -36,13 +36,14 @@ public class ClientSimulatorController {
                         @RequestParam List<String> receiverCodes,
                         @RequestParam String documentCode,
                         @RequestParam String certificateSerialNumber,
-                        @RequestParam(required = false, defaultValue = "1") Integer priority) throws Exception {
+                        @RequestParam(required = false, defaultValue = "1") Integer priority,
+                        @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) throws Exception {
 
                 log.info("[Simulator Controller] Tiếp nhận yêu cầu giả lập gửi văn bản từ Client...");
 
                 // Đẩy toàn bộ tác vụ nặng (Upload, Băm, Ký, Gửi) xuống tầng Service
                 Object response = clientSimulatorService.processAndSend(
-                                file, senderCode, receiverCodes, documentCode, certificateSerialNumber, priority);
+                                file, senderCode, receiverCodes, documentCode, certificateSerialNumber, priority, idempotencyKey);
 
                 return ResponseEntity.ok(response);
         }

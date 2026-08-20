@@ -43,16 +43,6 @@ public class MinioService {
         }
     }
 
-    /**
-     * Upload nội dung file từ byte array lên MinIO.
-     * Dùng cho VisualSignatureService sau khi PDFBox vẽ dấu xong
-     * và cần lưu file PDF mới (đã có dấu) lên MinIO.
-     *
-     * @param objectName  Object key muốn lưu (bao gồm cả path prefix nếu có)
-     * @param data        Nội dung file dạng byte array
-     * @param contentType MIME type (vd: "application/pdf")
-     * @return objectName đã lưu thành công
-     */
     public String uploadBytes(String objectName, byte[] data, String contentType) {
         try {
             ensureBucketExists();
@@ -75,18 +65,13 @@ public class MinioService {
                     .bucket(bucketName)
                     .object(objectName)
                     .method(Method.GET)
-                    .expiry(60 * 60) // 1 hour
                     .build());
-        } catch (Exception e) {
+        } catch (MinioException | IOException | InvalidKeyException | NoSuchAlgorithmException e) {
             throw new RuntimeException("Không thể lấy URL file: " + e.getMessage(), e);
         }
     }
 
-    /**
-     * Tải file từ MinIO theo object key và trả về InputStream.
-     * Dùng cho Gateway khi cần parse PDF để xác minh chữ ký.
-     * Caller có trách nhiệm đóng InputStream sau khi dùng xong.
-     */
+
     public InputStream download(String objectKey) {
         try {
             return minioClient.getObject(GetObjectArgs.builder()
@@ -94,7 +79,8 @@ public class MinioService {
                     .object(objectKey)
                     .build());
         } catch (MinioException | IOException | InvalidKeyException | NoSuchAlgorithmException e) {
-            throw new RuntimeException("Tải file từ MinIO thất bại: objectKey=" + objectKey + " | " + e.getMessage(), e);
+            throw new RuntimeException("Tải file từ MinIO thất bại: objectKey=" + objectKey + " | " + e.getMessage(),
+                    e);
         }
     }
 
@@ -114,7 +100,8 @@ public class MinioService {
         }
     }
 
-    private void ensureBucketExists() throws MinioException, IOException, InvalidKeyException, NoSuchAlgorithmException {
+    private void ensureBucketExists()
+            throws MinioException, IOException, InvalidKeyException, NoSuchAlgorithmException {
         boolean exists = minioClient.bucketExists(BucketExistsArgs.builder().bucket(bucketName).build());
         if (!exists) {
             minioClient.makeBucket(MakeBucketArgs.builder().bucket(bucketName).build());
@@ -122,4 +109,3 @@ public class MinioService {
         }
     }
 }
-
