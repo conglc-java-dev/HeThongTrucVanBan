@@ -1,6 +1,6 @@
 package com.TrucVanban.exchange.dto.request.send;
 
-
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import lombok.Data;
@@ -27,4 +27,15 @@ public class SignAndBuildRequest {
     private String payloadChecksum;
 
     private Integer priority = 1;
+
+    /**
+     * Tọa độ vẽ con dấu đỏ lên PDF (tùy chọn).
+     * Nếu null hoặc applyVisual=false, bước vẽ dấu được bỏ qua.
+     */
+    @Valid
+    private VisualSignatureRequest stampCoords;
+
+    /** Tọa độ vẽ chữ ký tay lên PDF (tùy chọn). */
+    @Valid
+    private VisualSignatureRequest signatureCoords;
 }

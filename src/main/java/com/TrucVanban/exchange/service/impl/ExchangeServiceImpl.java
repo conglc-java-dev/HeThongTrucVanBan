@@ -434,6 +434,11 @@ public class ExchangeServiceImpl implements ExchangeService {
                 .currentStep(0)
                 .nextReceiver(nextReceiver)
                 .verifiedSignaturesCount(results.size())
+                .title(request.getTitle())
+                .documentType(request.getDocumentType())
+                .priority(request.getPriority())
+                .extractedMetadata(request.getExtractedMetadata())
+                .summary(request.getSummary())
                 .build();
     }
 
@@ -471,6 +476,11 @@ public class ExchangeServiceImpl implements ExchangeService {
                 .currentStep(newStep)
                 .nextReceiver(nextReceiver)
                 .verifiedSignaturesCount(results.size())
+                .title(request.getTitle())
+                .documentType(request.getDocumentType())
+                .priority(request.getPriority())
+                .extractedMetadata(request.getExtractedMetadata())
+                .summary(request.getSummary())
                 .build();
     }
 
@@ -508,6 +518,11 @@ public class ExchangeServiceImpl implements ExchangeService {
                 .currentStep(transaction.getCurrentStep())
                 .nextReceiver(null)
                 .verifiedSignaturesCount(results.size())
+                .title(request.getTitle())
+                .documentType(request.getDocumentType())
+                .priority(request.getPriority())
+                .extractedMetadata(request.getExtractedMetadata())
+                .summary(request.getSummary())
                 .build();
     }
 

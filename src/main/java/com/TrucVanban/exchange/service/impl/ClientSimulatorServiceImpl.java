@@ -5,8 +5,10 @@ import com.TrucVanban.exchange.dto.request.send.MultiSignatureRequest;
 import com.TrucVanban.exchange.dto.request.send.SignAndBuildRequest;
 import com.TrucVanban.exchange.dto.request.send.SignatureRequest;
 import com.TrucVanban.exchange.dto.request.send.SimulateMultiSigRequest;
+import com.TrucVanban.exchange.dto.request.send.VisualSignatureRequest;
 import com.TrucVanban.exchange.dto.response.FileUploadResponse;
 import com.TrucVanban.exchange.service.ClientSimulatorService;
+import com.TrucVanban.exchange.service.VisualSignatureService;
 import com.TrucVanban.shared.service.MinioService;
 import com.TrucVanban.shared.utils.CanonicalStringBuilder;
 import lombok.AccessLevel;
@@ -45,6 +47,7 @@ public class ClientSimulatorServiceImpl implements ClientSimulatorService {
     final RestClient restClient;
     final CanonicalStringBuilder canonicalStringBuilder;
     final MinioService minioService;
+    final VisualSignatureService visualSignatureService;
 
     /** URL Gateway cho flow 1 chữ ký (legacy). Đọc từ application.yml. */
     @Value("${app.client-simulator.gateway-url:http://localhost:8080/api/v1/exchange}")
@@ -54,11 +57,7 @@ public class ClientSimulatorServiceImpl implements ClientSimulatorService {
     @Value("${app.client-simulator.multi-sig-gateway-url:http://localhost:8080/api/v1/exchange-documents/signatures}")
     String multiSigGatewayUrl;
 
-    /**
-     * Thư mục classpath chứa file PEM của các cơ quan.
-     * Convention đặt tên: {SENDER_CODE}_private_key.pem
-     * Ví dụ: A_BGDDT_private_key.pem, B_BTC_private_key.pem
-     */
+
     private static final String KEYS_CLASSPATH_DIR = "keys/";
 
     // =============================================
@@ -78,24 +77,57 @@ public class ClientSimulatorServiceImpl implements ClientSimulatorService {
 
             // Thuật toán Hash sử dụng StringBuilder đơn giản dễ đọc
             String computedChecksum = computeHexChecksum(hashBytes);
+            String previewUrl = minioService.getPresignedUrl(objectKey);
 
             results.add(FileUploadResponse.builder()
                     .fileName(file.getOriginalFilename())
                     .storagePath(objectKey)
                     .payloadChecksum(computedChecksum)
+                    .previewUrl(previewUrl)
                     .build());
+
         }
         return results;
     }
 
+    
     @Override
     public ExchangeDocumentRequest signAndBuildPayload(SignAndBuildRequest request) throws Exception {
+
+        String effectiveStoragePath = request.getStoragePath();
+        String effectiveChecksum    = request.getPayloadChecksum();
+
+        // ---- Bước 1: Vẽ dấu trực quan (nếu được yêu cầu) ----
+        VisualSignatureRequest stampCoords    = request.getStampCoords();
+        VisualSignatureRequest signatureCoords = request.getSignatureCoords();
+        boolean hasVisual = (stampCoords != null && stampCoords.isApplyVisual())
+                         || (signatureCoords != null && signatureCoords.isApplyVisual());
+
+        if (hasVisual) {
+            log.info("[Simulator-Single] Áp dụng Visual Layers: sender={}", request.getSenderCode());
+
+            // Vẽ dấu + chữ ký → nhận object key file PDF mới
+            effectiveStoragePath = visualSignatureService.applyVisualLayers(
+                    request.getStoragePath(), request.getSenderCode(),
+                    stampCoords, signatureCoords);
+
+            // Tính lại checksum từ file MỚI (đã có dấu)
+            try (InputStream newPdfStream = minioService.download(effectiveStoragePath)) {
+                byte[] newPdfBytes = newPdfStream.readAllBytes();
+                byte[] hashBytes = MessageDigest.getInstance("SHA-256").digest(newPdfBytes);
+                effectiveChecksum = computeHexChecksum(hashBytes);
+            }
+            log.info("[Simulator-Single] Visual Layers OK. NewPath={}, NewChecksum={}...",
+                    effectiveStoragePath, effectiveChecksum.substring(0, 8));
+        }
+
+        // ---- Bước 2: Build ExchangeDocumentRequest ----
         ExchangeDocumentRequest internalRequest = new ExchangeDocumentRequest();
         internalRequest.setSenderCode(request.getSenderCode());
         internalRequest.setReceiverCodes(request.getReceiverCodes());
         internalRequest.setDocumentCode(request.getDocumentCode());
-        internalRequest.setPayloadChecksum(request.getPayloadChecksum());
-        internalRequest.setStoragePath(request.getStoragePath());
+        internalRequest.setPayloadChecksum(effectiveChecksum);
+        internalRequest.setStoragePath(effectiveStoragePath);
         internalRequest.setCertificateSerialNumber(request.getCertificateSerialNumber());
         internalRequest.setPriority(request.getPriority() != null ? request.getPriority() : 1);
 
@@ -103,17 +135,15 @@ public class ClientSimulatorServiceImpl implements ClientSimulatorService {
                 .format(DateTimeFormatter.ISO_OFFSET_DATE_TIME);
         internalRequest.setTimestamp(currentTimestamp);
 
+        // ---- Bước 3: Ký transport signature ----
         String canonicalString = canonicalStringBuilder.build(internalRequest);
-
-        // Flow cũ: dùng key mặc định private_key.pem trong classpath root
         PrivateKey privateKey = loadPrivateKeyFromClasspath("keys/private_key.pem");
 
         Signature signatureInstance = Signature.getInstance("SHA256withRSA");
         signatureInstance.initSign(privateKey);
         signatureInstance.update(canonicalString.getBytes(StandardCharsets.UTF_8));
-        byte[] digitalSignatureBytes = signatureInstance.sign();
+        internalRequest.setSignature(Base64.getEncoder().encodeToString(signatureInstance.sign()));
 
-        internalRequest.setSignature(Base64.getEncoder().encodeToString(digitalSignatureBytes));
         return internalRequest;
     }
 
@@ -137,7 +167,7 @@ public class ClientSimulatorServiceImpl implements ClientSimulatorService {
         signReq.setCertificateSerialNumber(certificateSerialNumber);
         signReq.setPriority(priority);
 
-        // 3. Ký số
+        // 3. Ký số (không có visual trong flow legacy này)
         ExchangeDocumentRequest finalPayload = signAndBuildPayload(signReq);
 
         // 4. Gửi sang Gateway (URL từ config, không hardcode)
@@ -152,9 +182,19 @@ public class ClientSimulatorServiceImpl implements ClientSimulatorService {
     }
 
     // =============================================
-    // FLOW MỚI (Multi-Signature Sequential)
+    // LUỒNG KÝ NỐI TIẾP (Multi-Signature Sequential)
     // =============================================
 
+    /**
+     * Ký nối tiếp: tùy chọn vẽ dấu trực quan trước khi ký transport.
+     *
+     * <p><strong>Thứ tự quan trọng</strong>:
+     * <ol>
+     *   <li>Tập hợp existingSignatures từ bước trước</li>
+     *   <li>Vẽ dấu lên PDF mới (nếu applyVisual == true) → cập nhật storagePath payload</li>
+     *   <li>Ký transport signature trên payload ĐÃ có storagePath mới</li>
+     * </ol>
+     */
     @Override
     public MultiSignatureRequest signAndBuildMultiSigPayload(SimulateMultiSigRequest request) throws Exception {
         log.info("[Simulator-MultiSig] Bắt đầu dựng Payload: sender={}, role={}",
@@ -188,18 +228,41 @@ public class ClientSimulatorServiceImpl implements ClientSimulatorService {
                 .build();
         signatures.add(newSig);
 
+        // ---- Bước 1: Vẽ dấu trực quan (nếu được yêu cầu) ----
+        String effectiveStoragePath = request.getStoragePath();
+        VisualSignatureRequest stampCoords    = request.getStampCoords();
+        VisualSignatureRequest signatureCoords = request.getSignatureCoords();
+        boolean hasVisual = (stampCoords != null && stampCoords.isApplyVisual())
+                         || (signatureCoords != null && signatureCoords.isApplyVisual());
+
+        if (hasVisual) {
+            log.info("[Simulator-MultiSig] Áp dụng Visual Layers: sender={}",
+                    request.getCurrentSenderCode());
+            effectiveStoragePath = visualSignatureService.applyVisualLayers(
+                    request.getStoragePath(), request.getCurrentSenderCode(),
+                    stampCoords, signatureCoords);
+            log.info("[Simulator-MultiSig] Visual Layers OK. NewPath={}", effectiveStoragePath);
+        }
+
+        // ---- Bước 2: Build MultiSignatureRequest với storagePath đã cập nhật ----
         MultiSignatureRequest payload = new MultiSignatureRequest();
         payload.setMasterTransactionCode(request.getMasterTransactionCode());
         payload.setDocumentCode(request.getDocumentCode());
         payload.setCurrentSenderCode(request.getCurrentSenderCode());
         payload.setRoutingList(request.getRoutingList());
         payload.setDistributionList(request.getDistributionList());
-        payload.setStoragePath(request.getStoragePath());
+        payload.setStoragePath(effectiveStoragePath);   // ← path đã cập nhật (có dấu)
         payload.setRequestTimestamp(currentTimestamp);
         payload.setSignatures(signatures);
-        // transportSignature sẽ điền sau khi ký
+        // Metadata truyền xuyên suốt luồng ký nối tiếp
+        payload.setTitle(request.getTitle());
+        payload.setDocumentType(request.getDocumentType());
+        payload.setPriority(request.getPriority());
+        payload.setExtractedMetadata(request.getExtractedMetadata());
+        payload.setSummary(request.getSummary());
 
-        // Ký Transport Layer bằng Private Key của cơ quan hiện tại
+        // ---- Bước 3: Ký Transport Layer bằng Private Key của cơ quan ----
+        // Transport signature được tính SAU khi storagePath đã là file có dấu
         String canonicalString = canonicalStringBuilder.build(payload);
         log.info("[Simulator-MultiSig] Canonical String:\n{}", canonicalString);
 
@@ -210,8 +273,8 @@ public class ClientSimulatorServiceImpl implements ClientSimulatorService {
         signatureInstance.update(canonicalString.getBytes(StandardCharsets.UTF_8));
         payload.setTransportSignature(Base64.getEncoder().encodeToString(signatureInstance.sign()));
 
-        log.info("[Simulator-MultiSig] Hoàn tất. Step={}, totalSigs={}",
-                nextOrder, signatures.size());
+        log.info("[Simulator-MultiSig] Hoàn tất. Step={}, totalSigs={}, hasVisual={}",
+                nextOrder, signatures.size(), hasVisual);
         return payload;
     }
 
@@ -260,5 +323,10 @@ public class ClientSimulatorServiceImpl implements ClientSimulatorService {
             hexString.append(hex);
         }
         return hexString.toString();
+    }
+
+    @Override
+    public String getPresignedUrl(String objectKey) {
+        return minioService.getPresignedUrl(objectKey);
     }
 }

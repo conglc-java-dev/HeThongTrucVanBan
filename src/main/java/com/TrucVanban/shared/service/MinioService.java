@@ -9,6 +9,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.security.InvalidKeyException;
@@ -42,14 +43,41 @@ public class MinioService {
         }
     }
 
+    /**
+     * Upload nội dung file từ byte array lên MinIO.
+     * Dùng cho VisualSignatureService sau khi PDFBox vẽ dấu xong
+     * và cần lưu file PDF mới (đã có dấu) lên MinIO.
+     *
+     * @param objectName  Object key muốn lưu (bao gồm cả path prefix nếu có)
+     * @param data        Nội dung file dạng byte array
+     * @param contentType MIME type (vd: "application/pdf")
+     * @return objectName đã lưu thành công
+     */
+    public String uploadBytes(String objectName, byte[] data, String contentType) {
+        try {
+            ensureBucketExists();
+            minioClient.putObject(PutObjectArgs.builder()
+                    .bucket(bucketName)
+                    .object(objectName)
+                    .stream(new ByteArrayInputStream(data), data.length, -1)
+                    .contentType(contentType)
+                    .build());
+            log.info("Upload bytes thành công: {} ({} bytes)", objectName, data.length);
+            return objectName;
+        } catch (MinioException | IOException | InvalidKeyException | NoSuchAlgorithmException e) {
+            throw new RuntimeException("Upload bytes thất bại: " + e.getMessage(), e);
+        }
+    }
+
     public String getPresignedUrl(String objectName) {
         try {
             return minioClient.getPresignedObjectUrl(GetPresignedObjectUrlArgs.builder()
                     .bucket(bucketName)
                     .object(objectName)
                     .method(Method.GET)
+                    .expiry(60 * 60) // 1 hour
                     .build());
-        } catch (MinioException | IOException | InvalidKeyException | NoSuchAlgorithmException e) {
+        } catch (Exception e) {
             throw new RuntimeException("Không thể lấy URL file: " + e.getMessage(), e);
         }
     }
@@ -94,3 +122,4 @@ public class MinioService {
         }
     }
 }
+
