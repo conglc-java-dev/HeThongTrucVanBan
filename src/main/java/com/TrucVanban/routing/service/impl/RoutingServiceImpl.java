@@ -1,23 +1,18 @@
 package com.TrucVanban.routing.service.impl;
 
-import com.TrucVanban.exchange.entity.Document;
-import com.TrucVanban.exchange.entity.DocumentVersion;
 import com.TrucVanban.exchange.entity.ExchangeTransactions;
 import com.TrucVanban.exchange.enums.TransactionStatus;
-import com.TrucVanban.exchange.repository.DocumentRepository;
-import com.TrucVanban.exchange.repository.DocumentVersionRepository;
 import com.TrucVanban.exchange.repository.ExchangeTransactionsRepository;
-import com.TrucVanban.registry.entity.Organization;
-import com.TrucVanban.registry.repository.OrganizationRepository;
 import com.TrucVanban.routing.dto.request.RoutingRequest;
 import com.TrucVanban.routing.dto.response.RoutingResponse;
 import com.TrucVanban.routing.service.RoutingService;
-import com.TrucVanban.shared.exception.ResourceNotFoundException;
 import com.TrucVanban.shared.exception.BusinessLogicException;
+import com.TrucVanban.shared.exception.ResourceNotFoundException;
 import com.TrucVanban.storage.service.MinioService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.ByteArrayResource;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
@@ -26,156 +21,122 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.Optional;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class RoutingServiceImpl implements RoutingService {
 
+    private static final String ROUTING_IDEMPOTENCY_KEY_PREFIX = "idempotency:routing:";
+
     private final ExchangeTransactionsRepository exchangeTransactionsRepository;
-    private final DocumentRepository documentRepository;
-    private final DocumentVersionRepository documentVersionRepository;
-    private final OrganizationRepository organizationRepository;
     private final MinioService minioService;
     private final RestClient restClient;
-
-    private record RoutingData(
-            ExchangeTransactions transaction,
-            Document document,
-            Organization sender,
-            Organization receiver,
-            DocumentVersion version
-    ) {}
+    private final StringRedisTemplate redisTemplate;
 
     @Override
-    @Transactional
     public RoutingResponse dispatch(RoutingRequest request) {
-        validateRequest(request);
         String transactionCode = request.getTransactionCode();
-        log.info("[routing] Bắt đầu điều hướng văn bản: transactionCode={}", transactionCode);
+        if (transactionCode == null || transactionCode.isBlank()) {
+            throw new BusinessLogicException("Thiếu transactionCode");
+        }
 
-        RoutingData data = validateAndFetchData(transactionCode);
+        log.info("[routing] Bắt đầu điều hướng: transactionCode={}", transactionCode);
 
-        byte[] fileContent = downloadFile(data.version());
-        String fileName = buildFileName(data.document(), data.version());
 
-        executeDispatch(data, fileContent, fileName);
+        // Idempotency Check
+        String redisKey = ROUTING_IDEMPOTENCY_KEY_PREFIX + transactionCode;
+        Boolean isFirstClaim = redisTemplate.opsForValue().setIfAbsent(
+                redisKey,
+                "PROCESSING",
+                Duration.ofMinutes(10));
+        if (!isFirstClaim) {
+            // throw new BusinessLogicException("Giao dịch đã được xử lý trước đó: " + transactionCode);
+            // day la luong ngam cua rabbit mq , kh co http request nen khi nem ra exception -> spring ampq se hieu la consumer that bai -> se gui lai -> gay treo
+            return buildResponse(transactionCode);
+        }
 
-        updateTransactionStatus(data.transaction());
+        try {
 
-        log.info("[routing] Điều hướng thành công: transactionCode={}", transactionCode);
-        return buildResponse(data.transaction());
-    }
+            byte[] fileContent = downloadFile(request.getStoragePath());
+            String fileName = buildFileName(request.getDocumentCode(), request.getVersionNo(), request.getStoragePath());
 
-    private void validateRequest(RoutingRequest request) {
-        if (request == null || request.getTransactionCode() == null || request.getTransactionCode().isBlank()) {
-            throw new BusinessLogicException("Thông tin điều hướng không hợp lệ: Thiếu transactionCode");
+            sendToReceiver(request, fileContent, fileName);
+
+            redisTemplate.opsForValue().set(redisKey, "COMPLETED", Duration.ofMinutes(10));
+
+            // Mở Transaction ngắn chỉ để update trạng thái DB sau khi HTTP thành công
+            markDispatched(transactionCode);
+
+            log.info("[routing] Điều hướng thành công: transactionCode={}", transactionCode);
+            return buildResponse(transactionCode);
+        } catch (Exception e) {
+                redisTemplate.delete(redisKey);
+            throw e;
         }
     }
 
-    private RoutingData validateAndFetchData(String transactionCode) {
-        ExchangeTransactions transaction = exchangeTransactionsRepository.findByTransactionCode(transactionCode)
-                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy giao dịch: " + transactionCode));
-
-        Document document = documentRepository.findById(transaction.getDocumentId())
-                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy văn bản id: " + transaction.getDocumentId()));
-
-        Organization sender = organizationRepository.findById(transaction.getSenderOrgId())
-                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy tổ chức Người gửi id: " + transaction.getSenderOrgId()));
-
-        Organization receiver = organizationRepository.findById(transaction.getReceiverOrgId())
-                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy tổ chức Người nhận id: " + transaction.getReceiverOrgId()));
-
-        DocumentVersion version = documentVersionRepository.findTopByDocumentIdOrderByVersionNoDesc(document.getId())
-                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy phiên bản cho văn bản id: " + document.getId()));
-
-        return new RoutingData(transaction, document, sender, receiver, version);
-    }
-
-    private byte[] downloadFile(DocumentVersion version) {
+    private byte[] downloadFile(String storagePath) {
         try {
-            return minioService.download(version.getStoragePath());
+            return minioService.download(storagePath);
         } catch (Exception e) {
-            log.error("[routing] Lỗi khi tải tệp từ storage: path={}, error={}", version.getStoragePath(), e.getMessage());
+            log.error("[routing] Lỗi tải file: path={}, error={}", storagePath, e.getMessage());
             throw new BusinessLogicException("Không thể tải tệp từ bộ lưu trữ");
         }
     }
 
-    private void executeDispatch(RoutingData data, byte[] fileContent, String fileName) {
-        Organization receiver = data.receiver();
-        log.info("[routing] Đang gửi tới endpoint: {}", receiver.getReceiveEndpoint());
+    private void sendToReceiver(RoutingRequest request, byte[] fileContent, String fileName) {
+        log.info("[routing] Gửi tới endpoint: {}", request.getReceiveEndpoint());
 
-        MultiValueMap<String, Object> body = buildMultipartBody(data, fileContent, fileName);
+        MultiValueMap<String, Object> body = buildMultipartBody(request, fileContent, fileName);
 
         ResponseEntity<String> response = restClient.post()
-                .uri(receiver.getReceiveEndpoint())
+                .uri(request.getReceiveEndpoint())
                 .contentType(MediaType.MULTIPART_FORM_DATA)
                 .body(body)
                 .retrieve()
                 .toEntity(String.class);
 
-        validateResponse(response, data.transaction().getTransactionCode());
-    }
-
-    private void validateResponse(ResponseEntity<String> response, String transactionCode) {
         if (!response.getStatusCode().is2xxSuccessful()) {
-            log.error("[routing] Gửi thất bại: code={}, status={}", transactionCode, response.getStatusCode());
+            log.error("[routing] Gửi thất bại: transactionCode={}, status={}", request.getTransactionCode(), response.getStatusCode());
             throw new BusinessLogicException("Gửi văn bản tới đơn vị nhận không thành công: " + response.getStatusCode());
         }
     }
 
-    private void updateTransactionStatus(ExchangeTransactions transaction) {
-        transaction.setCurrentStatus(TransactionStatus.DISPATCHED);
-        exchangeTransactionsRepository.save(transaction);
+    @Transactional
+    public void markDispatched(String transactionCode) {
+        Optional<ExchangeTransactions> transaction = exchangeTransactionsRepository.findByTransactionCode(transactionCode);
+        transaction.ifPresent(t -> {
+            t.setCurrentStatus(TransactionStatus.DISPATCHED);
+            exchangeTransactionsRepository.save(t);
+        });
     }
 
-    private RoutingResponse buildResponse(ExchangeTransactions transaction) {
-        return RoutingResponse.builder()
-                .transactionCode(transaction.getTransactionCode())
-                .currentStatus(TransactionStatus.DISPATCHED)
-                .dispatchedAt(LocalDateTime.now())
-                .build();
-    }
-
-    private MultiValueMap<String, Object> buildMultipartBody(
-            RoutingData data,
-            byte[] fileContent,
-            String fileName
-    ) {
-        ExchangeTransactions transaction = data.transaction();
-        Document document = data.document();
-        Organization sender = data.sender();
-        Organization receiver = data.receiver();
-        DocumentVersion version = data.version();
-
+    private MultiValueMap<String, Object> buildMultipartBody(RoutingRequest request, byte[] fileContent, String fileName) {
         MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
-        body.add("transactionCode", transaction.getTransactionCode());
-        addIfNotNull(body, "documentCode", document.getDocumentCode());
-        addIfNotNull(body, "title", document.getTitle());
-        addIfNotNull(body, "summary", document.getSummary());
-        addIfNotNull(body, "documentType", document.getDocumentType());
-        body.add("senderCode", sender.getCode());
-        addIfNotNull(body, "senderName", sender.getName());
-        body.add("receiverCode", receiver.getCode());
-        addIfNotNull(body, "receiverName", receiver.getName());
-        body.add("priority", String.valueOf(transaction.getPriority()));
-        body.add("versionNo", String.valueOf(version.getVersionNo()));
-
-        if (document.getExtractedMetadata() != null) {
-            body.add("extractedMetadata", document.getExtractedMetadata().toString());
+        body.add("transactionCode", request.getTransactionCode());
+        body.add("priority", String.valueOf(request.getPriority()));
+        body.add("versionNo", String.valueOf(request.getVersionNo()));
+        body.add("senderCode", request.getSenderCode());
+        body.add("receiverCode", request.getReceiverCode());
+        addIfNotNull(body, "documentCode", request.getDocumentCode());
+        addIfNotNull(body, "title", request.getTitle());
+        addIfNotNull(body, "summary", request.getSummary());
+        addIfNotNull(body, "documentType", request.getDocumentType());
+        addIfNotNull(body, "senderName", request.getSenderName());
+        addIfNotNull(body, "receiverName", request.getReceiverName());
+        if (request.getExtractedMetadata() != null) {
+            body.add("extractedMetadata", request.getExtractedMetadata().toString());
         }
-
         body.add("file", new ByteArrayResource(fileContent) {
             @Override
-            public String getFilename() {
-                return fileName;
-            }
+            public String getFilename() { return fileName; }
 
             @Override
-            public long contentLength() {
-                return fileContent.length;
-            }
+            public long contentLength() { return fileContent.length; }
         });
         return body;
     }
@@ -186,12 +147,19 @@ public class RoutingServiceImpl implements RoutingService {
         }
     }
 
-    private String buildFileName(Document document, DocumentVersion version) {
-        String baseName = document.getDocumentCode();
-        String storagePath = version.getStoragePath();
-        String extension = storagePath.contains(".")
+    private String buildFileName(String documentCode, Integer versionNo, String storagePath) {
+        String extension = storagePath != null && storagePath.contains(".")
                 ? storagePath.substring(storagePath.lastIndexOf('.'))
                 : "";
-        return String.format("%s-v%d%s", baseName, version.getVersionNo(), extension);
+        return String.format("%s-v%d%s", documentCode, versionNo, extension);
+    }
+
+    private RoutingResponse buildResponse(String transactionCode) {
+        return RoutingResponse.builder()
+                .transactionCode(transactionCode)
+                .currentStatus(TransactionStatus.DISPATCHED)
+                .dispatchedAt(LocalDateTime.now())
+                .build();
     }
 }
+

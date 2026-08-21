@@ -1,7 +1,4 @@
 package com.TrucVanban.exchange.service.impl;
-
-import com.TrucVanban.exchange.entity.AuditLog;
-import com.TrucVanban.exchange.repository.AuditLogRepository;
 import com.TrucVanban.exchange.service.AuditLogService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -14,9 +11,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class AuditLogServiceImpl implements AuditLogService {
-
-    private final AuditLogRepository auditLogRepository;
-
     @Override
     @Async
     @Transactional(propagation = Propagation.REQUIRES_NEW)

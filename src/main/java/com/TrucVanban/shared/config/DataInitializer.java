@@ -4,6 +4,8 @@ import com.TrucVanban.auth.entity.Role;
 import com.TrucVanban.auth.entity.User;
 import com.TrucVanban.auth.repository.RoleRepository;
 import com.TrucVanban.auth.repository.UserRepository;
+import com.TrucVanban.auth.repository.UserRoleRepository;
+import com.TrucVanban.auth.entity.UserRole;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
@@ -21,6 +23,7 @@ public class DataInitializer implements CommandLineRunner {
 
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
+    private final UserRoleRepository userRoleRepository;
     private final PasswordEncoder passwordEncoder;
 
     @Override
@@ -35,10 +38,10 @@ public class DataInitializer implements CommandLineRunner {
                         .password(passwordEncoder.encode("123456"))
                         .email("admin@example.com")
                         .fullName("System Admin")
-                        .roles(Set.of(roleOpt.get()))
                         .build();
                 
-                userRepository.save(admin);
+                admin = userRepository.save(admin);
+                userRoleRepository.save(UserRole.builder().userId(admin.getId()).roleId(roleOpt.get().getId()).build());
                 log.info("Initialized default admin user");
             } else {
                 log.warn("ROLE_SUPER_ADMIN not found, cannot initialize admin user");

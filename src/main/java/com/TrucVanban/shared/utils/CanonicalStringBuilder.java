@@ -1,6 +1,8 @@
 package com.TrucVanban.shared.utils;
 
-import com.TrucVanban.exchange.dto.request.send.ExchangeDocumentRequest; // Import DTO của bạn
+import com.TrucVanban.exchange.dto.request.send.ExchangeDocumentRequest;
+import com.TrucVanban.exchange.dto.request.send.MultiSignatureRequest;
+import com.TrucVanban.exchange.dto.request.send.SignatureRequest;
 import org.springframework.stereotype.Component;
 
 import java.net.URLEncoder;
@@ -9,23 +11,26 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.TreeMap;
+import java.util.stream.Collectors;
 
 /**
- * Chuẩn hóa chuỗi ký (Canonical String Builder) theo quy tắc nghiêm ngặt:
- * 1. Tất cả Key viết thường (lowercase)
- * 2. Sắp xếp Key theo bảng chữ cái A-Z (TreeMap)
- * 3. Mảng receivers sắp xếp tăng dần trước khi nối chuỗi
- * 4. Mã hóa Value theo URL-Encode chuẩn RFC 3986
- * 5. Nối mỗi cặp key:value bằng ký tự \n
+ * Chuẩn hóa chuỗi ký (Canonical String Builder) theo quy tắc nghiêm ngặt.
+ *
+ * <p>Quy tắc chung:</p>
+ * <ol>
+ *   <li>Tất cả Key viết thường (lowercase)</li>
+ *   <li>Sắp xếp Key theo bảng chữ cái A-Z (TreeMap)</li>
+ *   <li>Mảng receivers/routingList/distributionList sort tăng dần trước khi nối chuỗi</li>
+ *   <li>Mã hóa Value theo URL-Encode chuẩn RFC 3986</li>
+ *   <li>Nối mỗi cặp key:value bằng ký tự \n</li>
+ * </ol>
+ 
  */
-@Component // Đánh dấu Component để có thể Inject vào Service nếu cần
+@Component
 public class CanonicalStringBuilder {
 
-    /**
-     * Hàm tiện ích nhận thẳng Request Object để code Service được sạch sẽ
-     */
     public String build(ExchangeDocumentRequest request) {
-        return build(
+        return buildLegacy(
                 request.getCertificateSerialNumber(),
                 request.getDocumentCode(),
                 request.getPayloadChecksum(),
@@ -35,10 +40,7 @@ public class CanonicalStringBuilder {
         );
     }
 
-    /**
-     * Xây dựng Canonical String từ các trường dữ liệu lõi của gói tin.
-     */
-    public String build(
+    public String buildLegacy(
             String certificateSerialNumber,
             String documentCode,
             String payloadChecksum,
@@ -46,7 +48,6 @@ public class CanonicalStringBuilder {
             String senderCode,
             String timestamp
     ) {
-        // Bước 1: Check Null an toàn và sắp xếp mảng receivers
         List<String> sortedReceivers = new ArrayList<>();
         if (receivers != null && !receivers.isEmpty()) {
             sortedReceivers.addAll(receivers);
@@ -54,7 +55,6 @@ public class CanonicalStringBuilder {
         }
         String receiversValue = String.join(",", sortedReceivers);
 
-        // Bước 2: Đưa vào TreeMap để tự động sort key A-Z (lowercase)
         TreeMap<String, String> canonicalMap = new TreeMap<>();
         canonicalMap.put("certificate_serial_number", certificateSerialNumber);
         canonicalMap.put("document_code", documentCode);
@@ -63,30 +63,78 @@ public class CanonicalStringBuilder {
         canonicalMap.put("sender_code", senderCode);
         canonicalMap.put("timestamp", timestamp);
 
-        // Bước 3: URL-Encode các giá trị (RFC 3986) và nối bằng \n
+        return buildFromMap(canonicalMap);
+    }
+
+
+    public String build(MultiSignatureRequest request) {
+        // Flatten signatures[]: "{order}#{signerCode}#{certificateSerial}", join "|"
+        String signaturesFlat = flattenSignatures(request.getSignatures());
+
+        // Sort và join routingList
+        String routingListStr = sortAndJoin(request.getRoutingList());
+
+        // Sort và join distributionList
+        String distributionListStr = sortAndJoin(request.getDistributionList());
+
+        TreeMap<String, String> canonicalMap = new TreeMap<>();
+        canonicalMap.put("current_sender_code", request.getCurrentSenderCode());
+        canonicalMap.put("distribution_list", distributionListStr);
+        canonicalMap.put("document_code", request.getDocumentCode());
+        canonicalMap.put("master_transaction_code", request.getMasterTransactionCode());
+        canonicalMap.put("request_timestamp", request.getRequestTimestamp());
+        canonicalMap.put("routing_list", routingListStr);
+        canonicalMap.put("signatures_flat", signaturesFlat);
+        canonicalMap.put("storage_path", request.getStoragePath());
+
+        return buildFromMap(canonicalMap);
+    }
+
+    /**
+     * Flatten mảng signatures[] thành chuỗi đơn.
+     * Format: "{order}#{signerCode}#{certificateSerial}", các phần tử join bằng "|"
+     * Ví dụ: "1#A_BGDDT#540453...|2#B_BTC#999953..."
+     */
+    public String flattenSignatures(List<SignatureRequest> signatures) {
+        if (signatures == null || signatures.isEmpty()) return "";
+        return signatures.stream()
+                .sorted((a, b) -> Integer.compare(
+                        a.getSignatureOrder() != null ? a.getSignatureOrder() : 0,
+                        b.getSignatureOrder() != null ? b.getSignatureOrder() : 0))
+                .map(sig -> sig.getSignatureOrder() + "#"
+                        + sig.getSignerCode() + "#"
+                        + sig.getCertificateSerialNumber())
+                .collect(Collectors.joining("|"));
+    }
+
+    // ===== PRIVATE HELPERS =====
+
+    private String buildFromMap(TreeMap<String, String> canonicalMap) {
         StringBuilder sb = new StringBuilder();
         boolean first = true;
         for (var entry : canonicalMap.entrySet()) {
-            if (!first) {
-                sb.append('\n');
-            }
+            if (!first) sb.append('\n');
             sb.append(entry.getKey())
                     .append(':')
                     .append(urlEncode(entry.getValue()));
             first = false;
         }
-
         return sb.toString();
     }
 
-    /**
-     * URL-Encode tuyệt đối chuẩn RFC 3986
-     */
+    private String sortAndJoin(List<String> list) {
+        if (list == null || list.isEmpty()) return "";
+        List<String> sorted = new ArrayList<>(list);
+        Collections.sort(sorted);
+        return String.join(",", sorted);
+    }
+
     private static String urlEncode(String value) {
         if (value == null) return "";
         return URLEncoder.encode(value, StandardCharsets.UTF_8)
-                .replace("+", "%20")   // Space thành %20
-                .replace("%7E", "~")   // Dấu ngã không mã hóa
-                .replace("*", "%2A");  // BẮT BUỘC: Dấu sao phải mã hóa theo chuẩn RFC
+                .replace("+", "%20")     // URLEncoder đổi khoảng trắng thành '+', cần đưa về %20
+                .replace("%2B", "%2B")   // Giữ nguyên mã hóa dấu + (múi giờ ISO-8601)
+                .replace("*", "%2A")     // Mã hóa dấu * theo RFC 3986
+                .replace("%7E", "~");    // Dấu ~ không mã hóa
     }
 }

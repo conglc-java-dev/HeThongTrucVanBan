@@ -4,6 +4,7 @@ import com.TrucVanban.registry.dto.request.*;
 import com.TrucVanban.registry.dto.response.*;
 import com.TrucVanban.registry.entity.Certificate;
 import com.TrucVanban.registry.entity.Organization;
+import com.TrucVanban.registry.entity.OrganizationVisualAsset;
 import com.TrucVanban.registry.entity.SlaConfiguration;
 import com.TrucVanban.registry.enums.CertificateStatus;
 import com.TrucVanban.registry.enums.OrganizationStatus;
@@ -12,6 +13,7 @@ import com.TrucVanban.registry.mapper.OrganizationMapper;
 import com.TrucVanban.registry.mapper.SlaConfigMapper;
 import com.TrucVanban.registry.repository.CertificateRepository;
 import com.TrucVanban.registry.repository.OrganizationRepository;
+import com.TrucVanban.registry.repository.OrganizationVisualAssetRepository;
 import com.TrucVanban.registry.repository.SlaConfigurationRepository;
 import com.TrucVanban.registry.service.RegistryService;
 import com.TrucVanban.registry.validator.OrganizationStateTransitionValidator;
@@ -38,6 +40,7 @@ public class RegistryServiceImpl implements RegistryService {
     private final OrganizationRepository organizationRepository;
     private final CertificateRepository certificateRepository;
     private final SlaConfigurationRepository slaConfigurationRepository;
+    private final OrganizationVisualAssetRepository visualAssetRepository;
     private final OrganizationMapper organizationMapper;
     private final SlaConfigMapper slaConfigMapper;
     private final OrganizationStateTransitionValidator organizationStateTransitionValidator;
@@ -203,6 +206,13 @@ public class RegistryServiceImpl implements RegistryService {
     }
 
     @Override
+    public Organization getOrganizationById(Long id) {
+        return organizationRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy tổ chức với id: " + id));
+    }
+
+
+    @Override
     public boolean checkCertificate(String signature, Long organizationId) {
         return certificateRepository.findByOrganizationIdAndStatus(organizationId, CertificateStatus.ACTIVE)
                 .map(cert -> !LocalDateTime.now().isAfter(cert.getExpiredAt()) && cert.getPublicKey().equals(signature))
@@ -223,5 +233,22 @@ public class RegistryServiceImpl implements RegistryService {
         return certificateRepository.findBySerialNumberAndStatus(serialNumber, CertificateStatus.ACTIVE)
                 .filter(cert -> cert.getExpiredAt() != null && !LocalDateTime.now().isAfter(cert.getExpiredAt()))
                 .orElse(null);
+    }
+
+    @Override
+    public List<OrgVisualAssetResponse> getVisualAssets(String orgCode) {
+        List<OrganizationVisualAsset> assets = visualAssetRepository
+                .findByOrganizationCodeAndIsActiveTrue(orgCode);
+
+        return assets.stream()
+                .map(a -> OrgVisualAssetResponse.builder()
+                        .id(a.getId())
+                        .assetType(a.getAssetType())
+                        .assetName(a.getAssetName())
+                        .imageUrl(a.getImageUrl())
+                        .signerTitle(a.getSignerTitle())
+                        .isDefault(Boolean.TRUE.equals(a.getIsDefault()))
+                        .build())
+                .collect(java.util.stream.Collectors.toList());
     }
 }

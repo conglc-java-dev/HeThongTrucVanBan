@@ -16,6 +16,8 @@ public interface OrganizationMapper {
     @Mapping(target = "rejectReason", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "updatedAt", ignore = true)
+    @Mapping(target = "stampImageUrl", ignore = true)
+    @Mapping(target = "signatureImageUrl", ignore = true)
     Organization toEntity(RegisterOrganizationRequest request);
 
     @Mapping(source = "id", target = "organizationId")

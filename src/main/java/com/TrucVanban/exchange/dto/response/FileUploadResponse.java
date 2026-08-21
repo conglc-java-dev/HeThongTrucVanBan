@@ -18,5 +18,6 @@ public class FileUploadResponse {
     String fileName;
     String storagePath;
     String payloadChecksum;
+    String previewUrl;
 
 }

@@ -5,17 +5,20 @@ import com.TrucVanban.auth.dto.response.RoleDetailResponse;
 import com.TrucVanban.auth.dto.response.RoleResponse;
 import com.TrucVanban.auth.entity.Permission;
 import com.TrucVanban.auth.entity.Role;
+import com.TrucVanban.auth.entity.RolePermission;
 import com.TrucVanban.auth.mapper.RoleMapper;
 import com.TrucVanban.auth.repository.PermissionRepository;
+import com.TrucVanban.auth.repository.RolePermissionRepository;
 import com.TrucVanban.auth.repository.RoleRepository;
+import com.TrucVanban.auth.repository.UserRoleRepository;
 import com.TrucVanban.auth.service.RoleService;
+import com.TrucVanban.shared.exception.BusinessLogicException;
 import com.TrucVanban.shared.exception.DuplicateResourceException;
 import com.TrucVanban.shared.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -26,6 +29,8 @@ public class RoleServiceImpl implements RoleService {
 
     private final RoleRepository roleRepository;
     private final PermissionRepository permissionRepository;
+    private final RolePermissionRepository rolePermissionRepository;
+    private final UserRoleRepository userRoleRepository;
     private final RoleMapper roleMapper;
 
     @Override
@@ -35,8 +40,17 @@ public class RoleServiceImpl implements RoleService {
             throw new DuplicateResourceException("Mã vai trò đã tồn tại");
         }
         Role role = roleMapper.toEntity(request);
-        setPermissions(role, request.getPermissions());
-        return roleMapper.toResponse(roleRepository.save(role));
+        Role savedRole = roleRepository.save(role);
+
+        if (request.getPermissions() != null) {
+            for (String code : request.getPermissions()) {
+                permissionRepository.findByCode(code).ifPresent(permission -> {
+                    rolePermissionRepository.save(RolePermission.builder().roleId(savedRole.getId()).permissionId(permission.getId()).build());
+                });
+            }
+        }
+        
+        return mapToResponseWithPermissions(savedRole);
     }
 
     @Override
@@ -52,13 +66,18 @@ public class RoleServiceImpl implements RoleService {
         }
 
         roleMapper.updateEntityFromRequest(request, role);
+        Role savedRole = roleRepository.save(role);
 
-        //request.getPermissions() = null -> giữ nguyên db
         if (request.getPermissions() != null) {
-            setPermissions(role, request.getPermissions());
+            rolePermissionRepository.deleteByRoleId(savedRole.getId());
+            for (String code : request.getPermissions()) {
+                permissionRepository.findByCode(code).ifPresent(permission -> {
+                    rolePermissionRepository.save(RolePermission.builder().roleId(savedRole.getId()).permissionId(permission.getId()).build());
+                });
+            }
         }
         
-        return roleMapper.toResponse(roleRepository.save(role));
+        return mapToResponseWithPermissions(savedRole);
     }
 
     @Override
@@ -69,7 +88,10 @@ public class RoleServiceImpl implements RoleService {
                 
         RoleDetailResponse response = roleMapper.toDetailResponse(role);
 
-        Set<String> rolePermissionCodes = role.getPermissions().stream()
+        List<Long> permissionIds = rolePermissionRepository.findByRoleId(role.getId()).stream()
+                .map(RolePermission::getPermissionId)
+                .collect(Collectors.toList());
+        Set<String> rolePermissionCodes = permissionRepository.findAllById(permissionIds).stream()
                 .map(Permission::getCode)
                 .collect(Collectors.toSet());
 
@@ -92,7 +114,7 @@ public class RoleServiceImpl implements RoleService {
     @Transactional(readOnly = true)
     public List<RoleResponse> getAllRoles() {
         return roleRepository.findAll().stream()
-                .map(roleMapper::toResponse)
+                .map(this::mapToResponseWithPermissions)
                 .collect(Collectors.toList());
     }
 
@@ -101,16 +123,24 @@ public class RoleServiceImpl implements RoleService {
     public void deleteRole(Long id) {
         Role role = roleRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy vai trò"));
+        
+        if (userRoleRepository.existsByRoleId(id)) {
+            throw new BusinessLogicException("Không thể xóa vai trò đang được gán cho người dùng");
+        }
+
+        rolePermissionRepository.deleteByRoleId(id);
         roleRepository.delete(role);
     }
     
-    private void setPermissions(Role role, Set<String> permissionCodes) {
-        Set<Permission> permissions = new HashSet<>();
-        if (permissionCodes != null) {
-            for (String code : permissionCodes) {
-                permissionRepository.findByCode(code).ifPresent(permissions::add);
-            }
-        }
-        role.setPermissions(permissions);
+    private RoleResponse mapToResponseWithPermissions(Role role) {
+        RoleResponse response = roleMapper.toResponse(role);
+        List<Long> permissionIds = rolePermissionRepository.findByRoleId(role.getId()).stream()
+                .map(RolePermission::getPermissionId)
+                .collect(Collectors.toList());
+        Set<String> permissions = permissionRepository.findAllById(permissionIds).stream()
+                .map(Permission::getCode)
+                .collect(Collectors.toSet());
+        response.setPermissions(permissions);
+        return response;
     }
 }

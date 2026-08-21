@@ -4,8 +4,10 @@ import com.TrucVanban.exchange.dto.request.RevokeDocumentRequest;
 import com.TrucVanban.exchange.dto.request.UpdateDocumentRequest;
 import com.TrucVanban.exchange.dto.request.receive.ReceiveDocumentRequest;
 import com.TrucVanban.exchange.dto.request.send.ExchangeDocumentRequest;
+import com.TrucVanban.exchange.dto.request.send.MultiSignatureRequest;
 import com.TrucVanban.exchange.dto.response.DocumentDetailResponse;
 import com.TrucVanban.exchange.dto.response.ExchangeDocumentResponse;
+import com.TrucVanban.exchange.dto.response.MultiSignatureResponse;
 import com.TrucVanban.exchange.dto.response.ReceiveDocumentResponse;
 import com.TrucVanban.exchange.dto.response.RevokeDocumentResponse;
 import com.TrucVanban.exchange.dto.response.TransactionReceivedStatusResponse;
@@ -32,8 +34,9 @@ public class ExchangeController {
     @PostMapping(value = "/exchange", consumes = MediaType.APPLICATION_JSON_VALUE)
     @Operation(summary = "Tiếp nhận giao dịch")
     public ResponseEntity<ResponseData<List<ExchangeDocumentResponse>>> exchangeDocument(
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
             @RequestBody @Valid ExchangeDocumentRequest request) {
-        List<ExchangeDocumentResponse> data = exchangeService.exchangeDocument(request);
+        List<ExchangeDocumentResponse> data = exchangeService.exchangeDocument(request, idempotencyKey);
         ResponseData<List<ExchangeDocumentResponse>> response = ResponseData.<List<ExchangeDocumentResponse>>builder()
                 .success(true)
                 .message("Tiếp nhận giao dịch thành công. Chữ ký hợp lệ - Hệ thống đang đưa vào hàng đợi ưu tiên (VALIDATED)")
@@ -42,6 +45,25 @@ public class ExchangeController {
 
         return ResponseEntity.ok(response);
     }
+
+    
+    @PostMapping(value = "/exchange-documents/signatures", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<ResponseData<MultiSignatureResponse>> processMultiSignatureDocument(
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
+            @RequestBody @Valid MultiSignatureRequest request) {
+
+        MultiSignatureResponse data = exchangeService.processMultiSignatureDocument(request, idempotencyKey);
+
+        ResponseData<MultiSignatureResponse> response = ResponseData.<MultiSignatureResponse>builder()
+                .success(true)
+                .message("Xác minh chữ ký và cập nhật luồng luân chuyển thành công")
+                .data(data)
+                .build();
+
+        return ResponseEntity.ok(response);
+    }
+
+
 
     @PostMapping(value = "/ack")
     @Operation(summary = "Ghi nhận trạng thái ACK thành công")

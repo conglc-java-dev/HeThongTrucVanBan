@@ -4,8 +4,11 @@ import com.TrucVanban.exchange.dto.request.RevokeDocumentRequest;
 import com.TrucVanban.exchange.dto.request.UpdateDocumentRequest;
 import com.TrucVanban.exchange.dto.request.receive.ReceiveDocumentRequest;
 import com.TrucVanban.exchange.dto.request.send.ExchangeDocumentRequest;
+import com.TrucVanban.exchange.dto.request.send.MultiSignatureRequest;
+import com.TrucVanban.exchange.dto.request.send.SignatureRequest;
 import com.TrucVanban.exchange.dto.response.DocumentDetailResponse;
 import com.TrucVanban.exchange.dto.response.ExchangeDocumentResponse;
+import com.TrucVanban.exchange.dto.response.MultiSignatureResponse;
 import com.TrucVanban.exchange.dto.response.ReceiveDocumentResponse;
 import com.TrucVanban.exchange.dto.response.RevokeDocumentResponse;
 import com.TrucVanban.exchange.dto.response.TransactionReceivedStatusResponse;
@@ -13,31 +16,40 @@ import com.TrucVanban.exchange.dto.response.TransactionSendStatusResponse;
 import com.TrucVanban.exchange.entity.*;
 import com.TrucVanban.exchange.enums.DocumentStatus;
 import com.TrucVanban.exchange.enums.SignatureStatus;
+import com.TrucVanban.exchange.enums.SigningFlowStatus;
 import com.TrucVanban.exchange.enums.TransactionStatus;
 import com.TrucVanban.exchange.mapper.DocumentMapper;
 import com.TrucVanban.exchange.repository.*;
 import com.TrucVanban.exchange.service.AuditLogService;
 import com.TrucVanban.exchange.service.ExchangeService;
+import com.TrucVanban.registry.entity.Organization;
 import com.TrucVanban.registry.service.RegistryService;
 import com.TrucVanban.routing.dto.request.RoutingRequest;
-import com.TrucVanban.shared.exception.BusinessLogicException;
-import com.TrucVanban.shared.exception.DuplicateResourceException;
-import com.TrucVanban.shared.exception.ForbiddenException;
-import com.TrucVanban.shared.exception.ResourceNotFoundException;
+import com.TrucVanban.shared.exception.*;
 import com.TrucVanban.shared.outbox.OutboxEventConstants;
 import com.TrucVanban.shared.outbox.entity.OutboxEvent;
 import com.TrucVanban.shared.outbox.repository.OutboxEventRepository;
 import com.TrucVanban.shared.utils.NumberUtils;
+import com.TrucVanban.shared.utils.StringUtils;
+import com.TrucVanban.shared.validator.MultiSignatureValidator;
+import com.TrucVanban.shared.validator.SignatureVerificationResult;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.Year;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
@@ -49,6 +61,9 @@ import java.util.concurrent.ThreadLocalRandom;
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 public class ExchangeServiceImpl implements ExchangeService {
 
+    private static final String EXCHANGE_DOCUMENT_IDEMPOTENCY_KEY_PREFIX = "idempotency:exchange-document:";
+    private static final String IDEMPOTENCY_COMPLETED_VALUE = "COMPLETED";
+
     RegistryService registryService;
     DocumentMapper documentMapper;
     DocumentRepository documentRepository;
@@ -57,117 +72,202 @@ public class ExchangeServiceImpl implements ExchangeService {
     DocumentReplacementRepository documentReplacementRepository;
     DocumentReceiverRepository documentReceiverRepository;
     StatusHistoryRepository statusHistoryRepository;
+    DocumentSignatureRepository documentSignatureRepository;
     AuditLogService auditLogService;
     OutboxEventRepository outboxEventRepository;
+    MultiSignatureValidator multiSignatureValidator;
     ObjectMapper objectMapper;
+    StringRedisTemplate redisTemplate;
     AuditLogRepository auditLogRepository;
+    private final Object lock  = new Object();
 
     @Override
     @Transactional
-    public List<ExchangeDocumentResponse> exchangeDocument(ExchangeDocumentRequest request) {
+    public List<ExchangeDocumentResponse> exchangeDocument(ExchangeDocumentRequest request, String idempotencyKey) {
         log.info("[exchangeDocument] Bắt đầu gửi văn bản: sender={}, receivers={}",
                 request.getSenderCode(), request.getReceiverCodes());
-        if (documentRepository.existsDocumentByDocumentCode(request.getDocumentCode())) {
-            throw new DuplicateResourceException("Mã văn bản đã tồn tại: " + request.getDocumentCode());
+        if (StringUtils.isNullOrBlank(idempotencyKey)) {
+            throw new InvalidInputException("Idempotency-Key là bắt buộc");
         }
-
-        Long senderId = registryService.getOrganizationIdByCode(request.getSenderCode());
-        List<Long> receiverIds = registryService.getOrganizationIdsByCode(request.getReceiverCodes());
-
-        // Xử lý thay thế văn bản nếu có replacedDocumentCode
-        Document replacedDoc = null;
-        if (request.getReplacedDocumentCode() != null && !request.getReplacedDocumentCode().isBlank()) {
-            replacedDoc = documentRepository.findByDocumentCode(request.getReplacedDocumentCode())
-                    .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy văn bản cần thay thế: " + request.getReplacedDocumentCode()));
-            if (!senderId.equals(replacedDoc.getSenderOrgId())) {
-                throw new ForbiddenException("Chỉ cơ quan gửi gốc mới có quyền thay thế văn bản này");
+        String redisIdempotencyKey = buildExchangeDocumentIdempotencyKey(idempotencyKey);
+        Boolean claimed = redisTemplate.opsForValue().setIfAbsent(
+                redisIdempotencyKey,
+                "PROCESSING",
+                Duration.ofMinutes(10)
+        );
+        if(!claimed){
+            if(redisTemplate.opsForValue().get(redisIdempotencyKey).equals(IDEMPOTENCY_COMPLETED_VALUE)){
+                throw new BusinessLogicException("Yêu cầu đã được xử lý trước đó. Vui lòng không gửi lại.");
             }
-            if (replacedDoc.getStatus() != DocumentStatus.ACTIVE && replacedDoc.getStatus() != DocumentStatus.RECALLED) {
-                throw new BusinessLogicException("Không thể thay thế văn bản có trạng thái: " + replacedDoc.getStatus());
+            else throw new DuplicateResourceException("Yêu cầu đang được xử lý. Vui lòng thử lại sau.");
+        }
+        try{
+            if (documentRepository.existsDocumentByDocumentCode(request.getDocumentCode())) {
+                throw new DuplicateResourceException("Mã văn bản đã tồn tại: " + request.getDocumentCode());
             }
-        }
 
-        // Lưu Document
-        Document document = documentMapper.toDocument(request);
-        document.setSenderOrgId(senderId);
-        document = documentRepository.saveAndFlush(document);
-        log.info("[exchangeDocument] Lưu document thành công: documentId={}, code={}",
-                document.getId(), document.getDocumentCode());
+            Long senderId = registryService.getOrganizationIdByCode(request.getSenderCode());
+            List<Long> receiverIds = registryService.getOrganizationIdsByCode(request.getReceiverCodes());
 
-        // Lưu DocumentVersion - dùng storagePath và payloadChecksum từ request
-        // (Client đã tự upload file lên MinIO và tính SHA-256 trước khi gọi API)
-        DocumentVersion existDocumentVersion = documentVersionRepository
-                .findTopByDocumentIdOrderByVersionNoDesc(document.getId())
-                .orElse(null);
-        Integer versionNo = existDocumentVersion != null ? existDocumentVersion.getVersionNo() + 1 : 1;
+            // Xử lý thay thế văn bản nếu có replacedDocumentCode
+            Document replacedDoc = null;
+            if (request.getReplacedDocumentCode() != null && !request.getReplacedDocumentCode().isBlank()) {
+                replacedDoc = documentRepository.findByDocumentCode(request.getReplacedDocumentCode())
+                        .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy văn bản cần thay thế: " + request.getReplacedDocumentCode()));
+                if (!senderId.equals(replacedDoc.getSenderOrgId())) {
+                    throw new ForbiddenException("Chỉ cơ quan gửi gốc mới có quyền thay thế văn bản này");
+                }
+                if (replacedDoc.getStatus() != DocumentStatus.ACTIVE && replacedDoc.getStatus() != DocumentStatus.RECALLED) {
+                    throw new BusinessLogicException("Không thể thay thế văn bản có trạng thái: " + replacedDoc.getStatus());
+                }
+            }
 
-        DocumentVersion documentVersion = DocumentVersion.builder()
-                .documentId(document.getId())
-                .versionNo(versionNo)
-                .storagePath(request.getStoragePath())
-                .checksum(request.getPayloadChecksum())
-                .fileSize(null)  // Client không bắt buộc truyền fileSize
-                .createdBy(registryService.getOrganizationNameById(senderId))
-                .build();
+            // Lưu Document
+            Document document = documentMapper.toDocument(request);
+            document.setSenderOrgId(senderId);
+            document = documentRepository.saveAndFlush(document);
+            log.info("[exchangeDocument] Lưu document thành công: documentId={}, code={}",
+                    document.getId(), document.getDocumentCode());
 
-        documentVersionRepository.save(documentVersion);
-        log.info("[exchangeDocument] Lưu document version thành công: documentId={}, version={}, path={}",
-                document.getId(), versionNo, request.getStoragePath());
+            // Lưu DocumentVersion - dùng storagePath và payloadChecksum từ request
+            // (Client đã tự upload file lên MinIO và tính SHA-256 trước khi gọi API)
+            DocumentVersion existDocumentVersion = documentVersionRepository
+                    .findTopByDocumentIdOrderByVersionNoDesc(document.getId())
+                    .orElse(null);
+            Integer versionNo = existDocumentVersion != null ? existDocumentVersion.getVersionNo() + 1 : 1;
 
-        // Lưu quan hệ thay thế nếu có
-        if (replacedDoc != null) {
-            replacedDoc.setStatus(DocumentStatus.REPLACED);
-            documentRepository.save(replacedDoc);
-
-            DocumentReplacement replacement = DocumentReplacement.builder()
-                    .replacedDocumentId(replacedDoc.getId())
-                    .replacementDocumentId(document.getId())
-                    .reason("Thay thế bởi văn bản " + document.getDocumentCode())
+            DocumentVersion documentVersion = DocumentVersion.builder()
+                    .documentId(document.getId())
+                    .versionNo(versionNo)
+                    .storagePath(request.getStoragePath())
+                    .checksum(request.getPayloadChecksum())
+                    .fileSize(null)  // Client không bắt buộc truyền fileSize
+                    .createdBy(registryService.getOrganizationNameById(senderId))
                     .build();
-            documentReplacementRepository.save(replacement);
 
-            auditLogService.log("DOCUMENT_REPLACED", "ORGANIZATION", request.getSenderCode(), "SUCCESS",
-                    String.format("{\"oldDoc\":\"%s\",\"newDoc\":\"%s\"}", replacedDoc.getDocumentCode(), document.getDocumentCode()),
-                    null, document.getId());
+            documentVersionRepository.save(documentVersion);
+            log.info("[exchangeDocument] Lưu document version thành công: documentId={}, version={}, path={}",
+                    document.getId(), versionNo, request.getStoragePath());
+
+            // Lưu quan hệ thay thế nếu có
+            if (replacedDoc != null) {
+                replacedDoc.setStatus(DocumentStatus.REPLACED);
+                documentRepository.save(replacedDoc);
+
+                DocumentReplacement replacement = DocumentReplacement.builder()
+                        .replacedDocumentId(replacedDoc.getId())
+                        .replacementDocumentId(document.getId())
+                        .reason("Thay thế bởi văn bản " + document.getDocumentCode())
+                        .build();
+                documentReplacementRepository.save(replacement);
+
+                auditLogService.log("DOCUMENT_REPLACED", "ORGANIZATION", request.getSenderCode(), "SUCCESS",
+                        String.format("{\"oldDoc\":\"%s\",\"newDoc\":\"%s\"}", replacedDoc.getDocumentCode(), document.getDocumentCode()),
+                        null, document.getId());
+            }
+
+            // Tạo ExchangeTransactions cho từng receiver
+            List<ExchangeDocumentResponse> exchangeDocumentResponses = new ArrayList<>();
+            final Long finalDocumentId = document.getId();
+            List<ExchangeTransactions> listTransaction = new ArrayList<>();
+            for (Long receiverId : receiverIds) {
+                String transactionCode = generateTransactionCode("EXCHANGE");
+                Integer priority = NumberUtils.isNullOrNegative(request.getPriority()) ? 0 : request.getPriority();
+
+                ExchangeTransactions transaction = ExchangeTransactions.builder()
+                        .transactionCode(transactionCode)
+                        .documentId(finalDocumentId)
+                        .senderOrgId(senderId)
+                        .receiverOrgId(receiverId)
+                        .priority(priority)
+                        // Sau khi qua filter xác minh chữ ký thành công → trạng thái VALIDATED
+                        .currentStatus(TransactionStatus.VALIDATED)
+                        .signatureStatus(SignatureStatus.VALID)
+                        .build();
+                listTransaction.add(transaction);
+
+                exchangeDocumentResponses.add(
+                        ExchangeDocumentResponse.builder()
+                                .transactionCode(transactionCode)
+                                .currentStatus(TransactionStatus.VALIDATED)
+                                .build()
+                );
+            }
+            listTransaction = exchangeTransactionsRepository.saveAll(listTransaction);
+
+            // Load sender/receiver organization 1 lần để bơm vào Outbox message
+            Organization sender = registryService.getOrganizationById(senderId);
+            List<Organization> receivers = receiverIds.stream()
+                    .map(registryService::getOrganizationById)
+                    .toList();
+
+            // effectively final reference để dùng trong lambda
+            final Document finalDocument = document;
+            final DocumentVersion finalDocumentVersion = documentVersion;
+
+            outboxEventRepository.saveAll(listTransaction.stream()
+                    .map(tx -> {
+                        Organization receiver = receivers.stream()
+                                .filter(r -> r.getId().equals(tx.getReceiverOrgId()))
+                                .findFirst()
+                                .orElseThrow();
+                        return toRoutingOutboxEvent(tx, finalDocument, finalDocumentVersion, sender, receiver);
+                    })
+                    .toList());
+            updateIdempotencyAfterCommit(redisIdempotencyKey);
+            return exchangeDocumentResponses;
+
+        } catch (Exception e) {
+            redisTemplate.delete(redisIdempotencyKey);
+            throw e;
         }
-
-        // Tạo ExchangeTransactions cho từng receiver
-        List<ExchangeDocumentResponse> exchangeDocumentResponses = new ArrayList<>();
-        final Long finalDocumentId = document.getId();
-        List<ExchangeTransactions> listTransaction = new ArrayList<>();
-        for (Long receiverId : receiverIds) {
-            String transactionCode = generateTransactionCode("EXCHANGE");
-            Integer priority = NumberUtils.isNullOrNegative(request.getPriority()) ? 0 : request.getPriority();
-
-            ExchangeTransactions transaction = ExchangeTransactions.builder()
-                    .transactionCode(transactionCode)
-                    .documentId(finalDocumentId)
-                    .senderOrgId(senderId)
-                    .receiverOrgId(receiverId)
-                    .priority(priority)
-                    // Sau khi qua filter xác minh chữ ký thành công → trạng thái VALIDATED
-                    .currentStatus(TransactionStatus.VALIDATED)
-                    .signatureStatus(SignatureStatus.VALID)
-                    .build();
-            listTransaction.add(transaction);
-
-            exchangeDocumentResponses.add(
-                    ExchangeDocumentResponse.builder()
-                            .transactionCode(transactionCode)
-                            .currentStatus(TransactionStatus.VALIDATED)
-                            .build()
-            );
-        }
-        listTransaction = exchangeTransactionsRepository.saveAll(listTransaction);
-        outboxEventRepository.saveAll(listTransaction.stream()
-                .map(this::toRoutingOutboxEvent)
-                .toList());
-        return exchangeDocumentResponses;
     }
 
-    private OutboxEvent toRoutingOutboxEvent(ExchangeTransactions transaction) {
+    private void updateIdempotencyAfterCommit(String redisKey) {
+        TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        redisTemplate.opsForValue().set(
+                                redisKey,
+                                IDEMPOTENCY_COMPLETED_VALUE,
+                                Duration.ofMinutes(10)
+                        );
+                    }
+                }
+        );
+    }
+
+    private String buildExchangeDocumentIdempotencyKey(String idempotencyKey) {
+        return EXCHANGE_DOCUMENT_IDEMPOTENCY_KEY_PREFIX + idempotencyKey;
+    }
+
+    private OutboxEvent toRoutingOutboxEvent(
+            ExchangeTransactions transaction,
+            Document document,
+            DocumentVersion version,
+            Organization sender,
+            Organization receiver) {
+
         RoutingRequest routingRequest = RoutingRequest.builder()
                 .transactionCode(transaction.getTransactionCode())
+                .priority(transaction.getPriority())
+                // Document info
+                .documentCode(document.getDocumentCode())
+                .title(document.getTitle())
+                .summary(document.getSummary())
+                .documentType(document.getDocumentType())
+                .extractedMetadata(document.getExtractedMetadata())
+                // File info
+                .storagePath(version.getStoragePath())
+                .versionNo(version.getVersionNo())
+                // Sender info
+                .senderCode(sender.getCode())
+                .senderName(sender.getName())
+                // Receiver info
+                .receiverCode(receiver.getCode())
+                .receiverName(receiver.getName())
+                .receiveEndpoint(receiver.getReceiveEndpoint())
                 .build();
 
         return OutboxEvent.builder()
@@ -383,6 +483,311 @@ public class ExchangeServiceImpl implements ExchangeService {
                 String.format("{\"documentCode\":\"%s\",\"updateReason\":\"%s\"}", documentCode, reason),
                 null, document.getId());
         log.info("[updateDocument] Cập nhật văn bản thành công: documentCode={}", documentCode);
+    }
+
+    @Override
+    @Transactional
+    public MultiSignatureResponse processMultiSignatureDocument(MultiSignatureRequest request, String idempotencyKey) {
+        log.info("[MultiSig] Bắt đầu xử lý: masterTxCode={}, sender={}, sigs={}",
+                request.getMasterTransactionCode(), request.getCurrentSenderCode(),
+                request.getSignatures().size());
+
+        // Idempotency check
+        if (StringUtils.isNullOrBlank(idempotencyKey)) {
+            throw new InvalidInputException("Idempotency-Key là bắt buộc");
+        }
+        String redisKey = "idempotency:multi-sig:" + idempotencyKey;
+        Boolean claimed = redisTemplate.opsForValue().setIfAbsent(redisKey, "PROCESSING", Duration.ofMinutes(10));
+        if (!claimed) {
+            String current = redisTemplate.opsForValue().get(redisKey);
+            if (IDEMPOTENCY_COMPLETED_VALUE.equals(current)) {
+                throw new BusinessLogicException("Yêu cầu đã được xử lý trước đó. Vui lòng không gửi lại.");
+            }
+            throw new DuplicateResourceException("Yêu cầu đang được xử lý. Vui lòng thử lại sau.");
+        }
+
+        try {
+            // ---- Tầng 2: Document Layer – Xác minh PDF và chữ ký ----
+            List<SignatureVerificationResult> verificationResults;
+            try {
+                verificationResults = multiSignatureValidator.verifyAll(request.getStoragePath(), request.getSignatures());
+            } catch (java.io.IOException e) {
+                log.error("[MultiSig] Không thể tải file PDF từ MinIO: storagePath={}, error={}",
+                        request.getStoragePath(), e.getMessage(), e);
+                throw new BusinessLogicException("Không thể tải file PDF để xác minh: " + e.getMessage());
+            }
+
+            // Kiểm tra có chữ ký nào thất bại không
+            SignatureVerificationResult firstFailure = verificationResults.stream()
+                    .filter(r -> !r.isValid())
+                    .findFirst()
+                    .orElse(null);
+
+            if (firstFailure != null) {
+                log.warn("[MultiSig] Xác minh PDF thất bại tại chữ ký #{}: {}",
+                        firstFailure.getSignatureOrder(), firstFailure.getFailureReason());
+                throw new BusinessLogicException(String.format(
+                        "Xác minh chữ ký thất bại tại bước #%d (%s): %s",
+                        firstFailure.getSignatureOrder(),
+                        firstFailure.getSignerCode(),
+                        firstFailure.getFailureReason()));
+            }
+
+            log.info("[MultiSig] Tầng 2 PASS — {} chữ ký hợp lệ", verificationResults.size());
+
+            // ---- State Machine — Tìm hoặc tạo ExchangeTransactions ----
+            SignatureRequest lastSig = getLastSignature(request.getSignatures());
+            String signerRole = lastSig.getSignerRole();
+
+            MultiSignatureResponse result;
+
+            if ("INITIATOR".equalsIgnoreCase(signerRole)) {
+                result = handleInitiator(request, verificationResults);
+            } else if ("FINAL_APPROVER".equalsIgnoreCase(signerRole)) {
+                result = handleFinalApprover(request, verificationResults);
+            } else {
+                // REVIEWER (mặc định)
+                result = handleReviewer(request, verificationResults);
+            }
+
+            updateIdempotencyAfterCommit(redisKey);
+            return result;
+
+        } catch (Exception e) {
+            redisTemplate.delete(redisKey);
+            throw e;
+        }
+    }
+
+    private MultiSignatureResponse handleInitiator(MultiSignatureRequest request,
+                                                    List<SignatureVerificationResult> results) {
+        log.info("[MultiSig-INITIATOR] Tạo mới giao dịch: masterTxCode={}", request.getMasterTransactionCode());
+
+        // Kiểm tra không bị duplicate masterTransactionCode
+        if (exchangeTransactionsRepository.findByMasterTransactionCode(request.getMasterTransactionCode()).isPresent()) {
+            throw new DuplicateResourceException("masterTransactionCode đã tồn tại: " + request.getMasterTransactionCode());
+        }
+
+        // Nếu không có routingList thì không thể khởi tạo
+        if (request.getRoutingList() == null || request.getRoutingList().isEmpty()) {
+            throw new InvalidInputException("routingList là bắt buộc khi INITIATOR khởi tạo giao dịch");
+        }
+
+        Long senderId = registryService.getOrganizationIdByCode(request.getCurrentSenderCode());
+        JsonNode routingListJson = objectMapper.valueToTree(request.getRoutingList());
+        JsonNode distributionListJson = objectMapper.valueToTree(
+                request.getDistributionList() != null ? request.getDistributionList() : List.of());
+
+        String transactionCode = generateTransactionCode(request.getMasterTransactionCode());
+
+        // Luồng ký nối không đi qua POST /exchange nên Document phải được tạo ở đây.
+        if (documentRepository.existsDocumentByDocumentCode(request.getDocumentCode())) {
+            throw new DuplicateResourceException("documentCode đã tồn tại: " + request.getDocumentCode());
+        }
+
+        Document document = Document.builder()
+                .documentCode(request.getDocumentCode())
+                .senderOrgId(senderId)
+                .build();
+        document = documentRepository.saveAndFlush(document);
+        log.info("[MultiSig-INITIATOR] Đã tạo Document: id={}, code={}", document.getId(), document.getDocumentCode());
+
+        // ── Bước 2: Tạo DocumentVersion ─────────────────────────────────────────
+        DocumentVersion documentVersion = DocumentVersion.builder()
+                .documentId(document.getId())
+                .versionNo(1)
+                .storagePath(request.getStoragePath())
+                .checksum(null)
+                .createdBy(registryService.getOrganizationNameById(senderId))
+                .build();
+        documentVersionRepository.save(documentVersion);
+        log.info("[MultiSig-INITIATOR] Đã tạo DocumentVersion: documentId={}, path={}",
+                document.getId(), request.getStoragePath());
+
+        ExchangeTransactions transaction = ExchangeTransactions.builder()
+                .masterTransactionCode(request.getMasterTransactionCode())
+                .transactionCode(transactionCode)
+                .documentId(document.getId())           
+                .senderOrgId(senderId)
+                .receiverOrgId(senderId) // INITIATOR chưa có receiverOrgId cụ thể, tạm đặt bằng senderId
+                .routingList(routingListJson)
+                .distributionList(distributionListJson)
+                .currentStep(0)
+                .currentStoragePath(request.getStoragePath())
+                .currentStatus(TransactionStatus.VALIDATED)
+                .signingFlowStatus(SigningFlowStatus.INITIATED)
+                .priority(1)
+                .signatureStatus(SignatureStatus.VALID)
+                .build();
+        transaction = exchangeTransactionsRepository.save(transaction);
+
+        // Lưu document signatures
+        saveDocumentSignatures(transaction.getId(), results, request);
+
+        // Push Outbox sang cơ quan B (routingList[0])
+        String nextReceiver = request.getRoutingList().get(0);
+        outboxEventRepository.save(toMultiSigOutboxEvent(transaction, nextReceiver,
+                OutboxEventConstants.EVENT_TYPE_ROUTING_REQUEST));
+
+        log.info("[MultiSig-INITIATOR] Tạo thành công. txId={}, documentId={}, nextReceiver={}",
+                transaction.getId(), document.getId(), nextReceiver);
+
+        return MultiSignatureResponse.builder()
+                .transactionId(transaction.getId())
+                .masterTransactionCode(request.getMasterTransactionCode())
+                .signingFlowStatus(SigningFlowStatus.INITIATED.name())
+                .currentStep(0)
+                .nextReceiver(nextReceiver)
+                .verifiedSignaturesCount(results.size())
+                .build();
+    }
+
+    /**
+     * Nhánh REVIEWER: Tăng currentStep, push Outbox sang cơ quan tiếp theo.
+     */
+    private MultiSignatureResponse handleReviewer(MultiSignatureRequest request,
+                                                   List<SignatureVerificationResult> results) {
+        ExchangeTransactions transaction = findTransactionByMasterCode(request.getMasterTransactionCode());
+
+        int newStep = transaction.getCurrentStep() + 1;
+        transaction.setCurrentStep(newStep);
+        transaction.setCurrentStoragePath(request.getStoragePath());
+        transaction.setSigningFlowStatus(SigningFlowStatus.WAITING_FOR_ROUTING_SIGN);
+        exchangeTransactionsRepository.save(transaction);
+
+        // Lưu document signatures (chưa có bước này, chỉ lưu chữ ký mới nhất)
+        saveDocumentSignatures(transaction.getId(), results, request);
+
+        // Xác định nextReceiver từ routingList
+        List<String> routingList = objectMapper.convertValue(
+                transaction.getRoutingList(), List.class);
+        String nextReceiver = newStep < routingList.size() ? routingList.get(newStep) : null;
+
+        if (nextReceiver != null) {
+            outboxEventRepository.save(toMultiSigOutboxEvent(transaction, nextReceiver,
+                    OutboxEventConstants.EVENT_TYPE_ROUTING_REQUEST));
+            log.info("[MultiSig-REVIEWER] Đã push Outbox sang: {}, step={}", nextReceiver, newStep);
+        }
+
+        return MultiSignatureResponse.builder()
+                .transactionId(transaction.getId())
+                .masterTransactionCode(request.getMasterTransactionCode())
+                .signingFlowStatus(SigningFlowStatus.WAITING_FOR_ROUTING_SIGN.name())
+                .currentStep(newStep)
+                .nextReceiver(nextReceiver)
+                .verifiedSignaturesCount(results.size())
+                .build();
+    }
+
+    /**
+     * Nhánh FINAL_APPROVER: Đánh dấu COMPLETED_READY_FOR_DISTRIBUTION,
+     * insert OutboxEvent cho tất cả cơ quan trong distributionList (song song).
+     */
+    private MultiSignatureResponse handleFinalApprover(MultiSignatureRequest request,
+                                                        List<SignatureVerificationResult> results) {
+        ExchangeTransactions transaction = findTransactionByMasterCode(request.getMasterTransactionCode());
+
+        transaction.setCurrentStoragePath(request.getStoragePath());
+        transaction.setSigningFlowStatus(SigningFlowStatus.COMPLETED_READY_FOR_DISTRIBUTION);
+        exchangeTransactionsRepository.save(transaction);
+
+        saveDocumentSignatures(transaction.getId(), results, request);
+
+        // Phân phối song song cho tất cả org trong distributionList
+        List<String> distributionList = objectMapper.convertValue(
+                transaction.getDistributionList(), List.class);
+
+        if (distributionList != null && !distributionList.isEmpty()) {
+            List<OutboxEvent> distributionEvents = distributionList.stream()
+                    .map(receiverCode -> toMultiSigOutboxEvent(transaction, receiverCode,
+                            OutboxEventConstants.EVENT_TYPE_DISTRIBUTION_REQUEST))
+                    .toList();
+            outboxEventRepository.saveAll(distributionEvents);
+            log.info("[MultiSig-FINAL_APPROVER] Đã push {} OutboxEvent phân phối", distributionEvents.size());
+        }
+
+        return MultiSignatureResponse.builder()
+                .transactionId(transaction.getId())
+                .masterTransactionCode(request.getMasterTransactionCode())
+                .signingFlowStatus(SigningFlowStatus.COMPLETED_READY_FOR_DISTRIBUTION.name())
+                .currentStep(transaction.getCurrentStep())
+                .nextReceiver(null)
+                .verifiedSignaturesCount(results.size())
+                .build();
+    }
+
+    private void saveDocumentSignatures(Long transactionId,
+                                         List<SignatureVerificationResult> results,
+                                         MultiSignatureRequest request) {
+        long existingCount = documentSignatureRepository.countByTransactionId(transactionId);
+        long expectedNewStart = existingCount + 1;
+
+        List<DocumentSignature> toSave = new ArrayList<>();
+        for (SignatureVerificationResult result : results) {
+            if (result.getSignatureOrder() < expectedNewStart) continue; // Đã lưu rồi
+
+            SignatureRequest payloadSig = request.getSignatures().stream()
+                    .filter(s -> s.getSignatureOrder() != null
+                            && s.getSignatureOrder() == result.getSignatureOrder())
+                    .findFirst()
+                    .orElse(null);
+
+            if (payloadSig == null) continue;
+
+            toSave.add(DocumentSignature.builder()
+                    .transactionId(transactionId)
+                    .signatureOrder(result.getSignatureOrder())
+                    .signerCode(result.getSignerCode())
+                    .signerRole(payloadSig.getSignerRole())
+                    .signatureType(payloadSig.getSignatureType())
+                    .certificateSerial(payloadSig.getCertificateSerialNumber())
+                    .signatureValue(payloadSig.getSignatureValue())
+                    .byteRange(result.getByteRange())
+                    .fileUrlAtSigning(request.getStoragePath())
+                    .signedAt(parseTimestamp(payloadSig.getTimestamp()))
+                    .verifiedAt(LocalDateTime.now())
+                    .build());
+        }
+        if (!toSave.isEmpty()) documentSignatureRepository.saveAll(toSave);
+    }
+
+    private OutboxEvent toMultiSigOutboxEvent(ExchangeTransactions transaction,
+                                               String receiverCode, String eventType) {
+        var payload = objectMapper.createObjectNode()
+                .put("masterTransactionCode", transaction.getMasterTransactionCode())
+                .put("transactionCode", transaction.getTransactionCode())
+                .put("receiverCode", receiverCode)
+                .put("currentStoragePath", transaction.getCurrentStoragePath());
+
+        return OutboxEvent.builder()
+                .aggregateType(OutboxEventConstants.AGGREGATE_TYPE_EXCHANGE_TRANSACTION)
+                .aggregateId(transaction.getId())
+                .eventType(eventType)
+                .payload(payload)
+                .build();
+    }
+
+    private ExchangeTransactions findTransactionByMasterCode(String masterTransactionCode) {
+        return exchangeTransactionsRepository.findByMasterTransactionCode(masterTransactionCode)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Không tìm thấy giao dịch với masterTransactionCode: " + masterTransactionCode));
+    }
+
+    private SignatureRequest getLastSignature(List<SignatureRequest> signatures) {
+        return signatures.stream()
+                .max((a, b) -> Integer.compare(
+                        a.getSignatureOrder() != null ? a.getSignatureOrder() : 0,
+                        b.getSignatureOrder() != null ? b.getSignatureOrder() : 0))
+                .orElseThrow(() -> new InvalidInputException("Mảng signatures[] rỗng"));
+    }
+
+    private LocalDateTime parseTimestamp(String timestamp) {
+        if (timestamp == null || timestamp.isBlank()) return null;
+        try {
+            return OffsetDateTime.parse(timestamp).toLocalDateTime();
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private String generateTransactionCode(String prefix) {

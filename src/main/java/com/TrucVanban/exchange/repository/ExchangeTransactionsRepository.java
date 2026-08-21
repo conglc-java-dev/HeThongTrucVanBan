@@ -12,4 +12,5 @@ public interface ExchangeTransactionsRepository extends JpaRepository<ExchangeTr
     Optional<ExchangeTransactions> findByTransactionCodeAndCurrentStatus(String transactionCode, TransactionStatus currentStatus);
     List<ExchangeTransactions> findByReceiverOrgId(Long receiverOrgId);
     List<ExchangeTransactions> findByDocumentId(Long documentId);
+    Optional<ExchangeTransactions> findByMasterTransactionCode(String masterTransactionCode);
 }
