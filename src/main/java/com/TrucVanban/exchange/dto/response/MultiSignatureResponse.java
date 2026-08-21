@@ -1,5 +1,6 @@
 package com.TrucVanban.exchange.dto.response;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -21,4 +22,11 @@ public class MultiSignatureResponse {
     private String nextReceiver;
 
     private Integer verifiedSignaturesCount;
+
+    // ---- Metadata tuỳ chọn (mirror từ request, tiện client hiển thị lại) ----
+    private String title;
+    private String documentType;
+    private Integer priority;
+    private JsonNode extractedMetadata;
+    private String summary;
 }

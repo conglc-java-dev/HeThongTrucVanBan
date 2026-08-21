@@ -9,6 +9,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.security.InvalidKeyException;
@@ -42,6 +43,22 @@ public class MinioService {
         }
     }
 
+    public String uploadBytes(String objectName, byte[] data, String contentType) {
+        try {
+            ensureBucketExists();
+            minioClient.putObject(PutObjectArgs.builder()
+                    .bucket(bucketName)
+                    .object(objectName)
+                    .stream(new ByteArrayInputStream(data), data.length, -1)
+                    .contentType(contentType)
+                    .build());
+            log.info("Upload bytes thành công: {} ({} bytes)", objectName, data.length);
+            return objectName;
+        } catch (MinioException | IOException | InvalidKeyException | NoSuchAlgorithmException e) {
+            throw new RuntimeException("Upload bytes thất bại: " + e.getMessage(), e);
+        }
+    }
+
     public String getPresignedUrl(String objectName) {
         try {
             return minioClient.getPresignedObjectUrl(GetPresignedObjectUrlArgs.builder()
@@ -54,11 +71,7 @@ public class MinioService {
         }
     }
 
-    /**
-     * Tải file từ MinIO theo object key và trả về InputStream.
-     * Dùng cho Gateway khi cần parse PDF để xác minh chữ ký.
-     * Caller có trách nhiệm đóng InputStream sau khi dùng xong.
-     */
+
     public InputStream download(String objectKey) {
         try {
             return minioClient.getObject(GetObjectArgs.builder()
@@ -66,7 +79,8 @@ public class MinioService {
                     .object(objectKey)
                     .build());
         } catch (MinioException | IOException | InvalidKeyException | NoSuchAlgorithmException e) {
-            throw new RuntimeException("Tải file từ MinIO thất bại: objectKey=" + objectKey + " | " + e.getMessage(), e);
+            throw new RuntimeException("Tải file từ MinIO thất bại: objectKey=" + objectKey + " | " + e.getMessage(),
+                    e);
         }
     }
 
@@ -86,7 +100,8 @@ public class MinioService {
         }
     }
 
-    private void ensureBucketExists() throws MinioException, IOException, InvalidKeyException, NoSuchAlgorithmException {
+    private void ensureBucketExists()
+            throws MinioException, IOException, InvalidKeyException, NoSuchAlgorithmException {
         boolean exists = minioClient.bucketExists(BucketExistsArgs.builder().bucket(bucketName).build());
         if (!exists) {
             minioClient.makeBucket(MakeBucketArgs.builder().bucket(bucketName).build());

@@ -1,5 +1,6 @@
 package com.TrucVanban.exchange.dto.request.send;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
@@ -38,4 +39,10 @@ public class MultiSignatureRequest {
     @NotEmpty(message = "signatures không được để trống")
     @Valid
     private List<SignatureRequest> signatures;
+
+    private String title;
+    private String documentType;
+    private Integer priority;
+    private JsonNode extractedMetadata;
+    private String summary;
 }
