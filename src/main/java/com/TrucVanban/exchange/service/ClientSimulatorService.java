@@ -22,4 +22,6 @@ public interface ClientSimulatorService {
 
     ExchangeDocumentRequest signAndBuildPayload(SignAndBuildRequest request) throws Exception;
     MultiSignatureRequest signAndBuildMultiSigPayload(SimulateMultiSigRequest request) throws Exception;
+
+    String getPresignedUrl(String objectKey);
 }

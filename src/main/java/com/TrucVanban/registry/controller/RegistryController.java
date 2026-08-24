@@ -12,6 +12,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/registry")
 @RequiredArgsConstructor
@@ -26,17 +28,14 @@ public class RegistryController {
 
                 RegisterOrganizationResponse data = registryService.registerOrganization(request);
 
-                ResponseData<RegisterOrganizationResponse> response = ResponseData
+                return ResponseEntity.status(HttpStatus.CREATED).body(ResponseData
                                 .<RegisterOrganizationResponse>builder()
                                 .success(true)
                                 .message("Đăng ký thành công. Vui lòng chờ được phê duyệt.")
                                 .data(data)
-                                .build();
-
-                return ResponseEntity.status(HttpStatus.CREATED).body(response);
+                                .build());
         }
 
-        // Body: { "status": "ACTIVE|REJECTED|SUSPENDED", "reason": "..." }
         @PatchMapping("/organizations/{code}/status")
         @Operation(summary = "Cập nhật trạng thái tổ chức [phê duyệt, khóa, mở khóa]")
         public ResponseEntity<ResponseData<UpdateOrganizationStatusResponse>> updateOrganizationStatus(
@@ -45,14 +44,11 @@ public class RegistryController {
 
                 UpdateOrganizationStatusResponse data = registryService.updateOrganizationStatus(code, request);
 
-                ResponseData<UpdateOrganizationStatusResponse> response = ResponseData
-                                .<UpdateOrganizationStatusResponse>builder()
+                return ResponseEntity.ok(ResponseData.<UpdateOrganizationStatusResponse>builder()
                                 .success(true)
                                 .message("Cập nhật trạng thái tổ chức thành công")
                                 .data(data)
-                                .build();
-
-                return ResponseEntity.ok(response);
+                                .build());
         }
 
         @PutMapping("/organizations/{code}/endpoint")
@@ -63,13 +59,11 @@ public class RegistryController {
 
                 UpdateEndpointResponse data = registryService.updateEndpoint(code, request);
 
-                ResponseData<UpdateEndpointResponse> response = ResponseData.<UpdateEndpointResponse>builder()
+                return ResponseEntity.ok(ResponseData.<UpdateEndpointResponse>builder()
                                 .success(true)
                                 .message("Cập nhật endpoint thành công")
                                 .data(data)
-                                .build();
-
-                return ResponseEntity.ok(response);
+                                .build());
         }
 
         @PostMapping("/organizations/{code}/certificates")
@@ -80,13 +74,11 @@ public class RegistryController {
 
                 UpdateCertificateResponse data = registryService.updateCertificate(code, request);
 
-                ResponseData<UpdateCertificateResponse> response = ResponseData.<UpdateCertificateResponse>builder()
+                return ResponseEntity.ok(ResponseData.<UpdateCertificateResponse>builder()
                                 .success(true)
                                 .message("Cập nhật chứng thư số thành công")
                                 .data(data)
-                                .build();
-
-                return ResponseEntity.ok(response);
+                                .build());
         }
 
         @GetMapping("/organizations/{code}")
@@ -96,12 +88,30 @@ public class RegistryController {
 
                 OrganizationDetailResponse data = registryService.getOrganizationDetail(code);
 
-                ResponseData<OrganizationDetailResponse> response = ResponseData.<OrganizationDetailResponse>builder()
+                return ResponseEntity.ok(ResponseData.<OrganizationDetailResponse>builder()
                                 .success(true)
                                 .message("Tra cứu thông tin thành công")
                                 .data(data)
-                                .build();
+                                .build());
+        }
 
-                return ResponseEntity.ok(response);
+        /**
+         * Lấy danh sách visual assets (con dấu, chữ ký) đang active của cơ quan.
+         *
+         * <p>Public endpoint — không yêu cầu xác thực.
+         * Logic mapping được thực hiện hoàn toàn trong {@code RegistryService}.
+         */
+        @GetMapping("/organizations/{code}/visual-assets")
+        @Operation(summary = "Lấy danh sách con dấu & chữ ký của cơ quan")
+        public ResponseEntity<ResponseData<List<OrgVisualAssetResponse>>> getVisualAssets(
+                        @PathVariable String code) {
+
+                List<OrgVisualAssetResponse> data = registryService.getVisualAssets(code);
+
+                return ResponseEntity.ok(ResponseData.<List<OrgVisualAssetResponse>>builder()
+                                .success(true)
+                                .message("Lấy danh sách visual assets thành công")
+                                .data(data)
+                                .build());
         }
 }

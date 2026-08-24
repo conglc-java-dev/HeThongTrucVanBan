@@ -1,5 +1,6 @@
 package com.TrucVanban.exchange.dto.request.send;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
@@ -35,4 +36,19 @@ public class SimulateMultiSigRequest {
 
     @Valid
     private List<SignatureRequest> existingSignatures;
+
+    // ---- Metadata tuỳ chọn (đồng bộ với MultiSignatureRequest) ----
+    private String title;
+    private String documentType;
+    private Integer priority;
+    private JsonNode extractedMetadata;
+    private String summary;
+    /** Tọa độ vẽ con dấu đỏ lên PDF (tùy chọn). */
+    @Valid
+    private VisualSignatureRequest stampCoords;
+
+    /** Tọa độ vẽ chữ ký tay lên PDF (tùy chọn). */
+    @Valid
+    private VisualSignatureRequest signatureCoords;
 }
+

@@ -38,6 +38,12 @@ public class Organization {
     @Column(name = "reject_reason")
     private String rejectReason;
 
+    @Column(name = "stamp_image_url", length = 500)
+    private String stampImageUrl;
+
+    @Column(name = "signature_image_url", length = 500)
+    private String signatureImageUrl;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 
