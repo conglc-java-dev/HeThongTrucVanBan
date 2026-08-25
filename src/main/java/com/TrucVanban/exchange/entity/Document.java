@@ -41,6 +41,9 @@ public class Document {
     @Column(name = "document_type", length = 50)
     private String documentType;
 
+    @Column(name = "issued_date", length = 40)
+    private String issuedDate;
+
     @Builder.Default
     @Column(name = "current_version")
     private Integer currentVersion = 1;

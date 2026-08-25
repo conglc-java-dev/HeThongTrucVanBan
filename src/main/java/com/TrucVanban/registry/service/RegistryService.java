@@ -36,4 +36,6 @@ public interface RegistryService {
     Certificate findActiveCertificateBySerialNumber(String serialNumber);
 
     List<OrgVisualAssetResponse> getVisualAssets(String orgCode);
+
+    List<ActiveOrganizationResponse> getActiveOrganizations();
 }

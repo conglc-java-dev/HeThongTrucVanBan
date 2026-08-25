@@ -3,6 +3,7 @@ package com.TrucVanban.exchange.dto.request.send;
 import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import lombok.Data;
 
 import java.util.List;
@@ -43,6 +44,12 @@ public class SimulateMultiSigRequest {
     private Integer priority;
     private JsonNode extractedMetadata;
     private String summary;
+    @Pattern(
+            regexp = "^(?:\\d{2}-\\d{2}-\\d{4}|\\d{4}-\\d{2}-\\d{2}|\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2}))$",
+            message = "Ngày phát hành (issuedDate) phải theo dd-MM-yyyy, ISO 8601 hoặc YYYY-MM-DD"
+    )
+    private String issuedDate;
+
     /** Tọa độ vẽ con dấu đỏ lên PDF (tùy chọn). */
     @Valid
     private VisualSignatureRequest stampCoords;

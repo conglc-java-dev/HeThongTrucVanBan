@@ -822,6 +822,40 @@
       align-items: center;
     }
 
+    .recipient-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .recipient-selected {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 8px 6px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface);
+      font-size: 13px;
+    }
+
+    .recipient-picker {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+    }
+
+    .recipient-search {
+      width: 100%;
+      grid-column: 1 / -1;
+    }
+
+    .recipient-picker select {
+      width: 100%;
+      min-height: 132px;
+    }
+
     .file-input {
       flex: 1;
       background: var(--surface);
@@ -1317,11 +1351,14 @@
                 </select>
               </div>
               <div class="fg">
-                <label>Co quan nhan <span class="req">*</span></label>
-                <select id="s-receiver">
-                  <option value="B_BTC">B_BTC - Bo TT&amp;TT</option>
-                  <option value="A_BGDDT">A_BGDDT - Co quan Gia lap Test</option>
-                </select>
+                <label>Cac co quan nhan <span class="req">*</span></label>
+                <div class="recipient-picker">
+                  <input id="s-receiver-search" type="search" class="recipient-search" placeholder="Tim theo ten hoac ma co quan..." oninput="filterRecipientOptions('single')">
+                  <select id="s-receiver-picker" size="5" aria-label="Tim va chon co quan nhan"></select>
+                  <button type="button" class="btn btn-ghost btn-sm" onclick="addRecipient('single')">+ Them co quan</button>
+                </div>
+                <div id="s-receiver-list" class="recipient-list"></div>
+                <div class="hint">Hiển thị tên cơ quan; hệ thống tự gửi mã cơ quan tương ứng.</div>
               </div>
             </div>
             <div class="grid-2">
@@ -1342,6 +1379,11 @@
             <div class="fg">
               <label>Tieu de van ban</label>
               <input type="text" id="s-title" value="Cong van huong dan trien khai he thong van ban dien tu" />
+            </div>
+            <div class="fg">
+              <label>Ngay phat hanh</label>
+              <input type="date" id="s-issuedDate" />
+              <div class="hint">Chọn bằng lịch; API gửi giá trị YYYY-MM-DD.</div>
             </div>
             <div class="grid-2">
               <div class="fg">
@@ -1514,8 +1556,13 @@
               </div>
               <div class="fg">
                 <label>Distribution List (phan phoi cuoi)</label>
-                <input type="text" id="m-distrib" value="A_BGDDT" readonly />
-                <div class="hint">Nhan sau khi B ky xong</div>
+                <div class="recipient-picker">
+                  <input id="m-distrib-search" type="search" class="recipient-search" placeholder="Tim theo ten hoac ma co quan..." oninput="filterRecipientOptions('distribution')">
+                  <select id="m-distrib-picker" size="5" aria-label="Tim va chon co quan phan phoi"></select>
+                  <button type="button" class="btn btn-ghost btn-sm" onclick="addRecipient('distribution')">+ Them co quan</button>
+                </div>
+                <div id="m-distrib-list" class="recipient-list"></div>
+                <div class="hint">Các cơ quan nhận văn bản sau khi B ký xong.</div>
               </div>
             </div>
 
@@ -1541,6 +1588,11 @@
             <div class="fg">
               <label>Tieu de van ban</label>
               <input type="text" id="m-title" value="Cong van ky noi lien co quan" />
+            </div>
+            <div class="fg">
+              <label>Ngay phat hanh</label>
+              <input type="date" id="m-issuedDate" />
+              <div class="hint">Chọn bằng lịch; API gửi giá trị YYYY-MM-DD.</div>
             </div>
             <div class="fg">
               <label>Tom tat noi dung</label>
@@ -1601,6 +1653,10 @@
                   <div class="doc-field">
                     <label>Loai van ban</label>
                     <div class="val" id="rv-docType">-</div>
+                  </div>
+                  <div class="doc-field">
+                    <label>Ngay phat hanh</label>
+                    <div class="val" id="rv-issuedDate">-</div>
                   </div>
                   <div class="doc-field">
                     <label>Muc do uu tien</label>
@@ -1883,6 +1939,23 @@
       A_BGDDT: { name: 'Co quan Gia lap Test', cert: '540453303831353930323330' },
       B_BTC: { name: 'Bo Thong tin va Truyen thong', cert: '740453303831353930323999' }
     };
+    var activeOrganizations = Object.keys(ORGS).map(function (code) {
+      return { code: code, name: ORGS[code].name };
+    });
+    var recipientGroups = {
+      single: {
+        searchId: 's-receiver-search',
+        pickerId: 's-receiver-picker',
+        listId: 's-receiver-list',
+        selectedCodes: []
+      },
+      distribution: {
+        searchId: 'm-distrib-search',
+        pickerId: 'm-distrib-picker',
+        listId: 'm-distrib-list',
+        selectedCodes: []
+      }
+    };
 
     /* STATE */
     var S = {
@@ -1903,6 +1976,9 @@
     }
     function genMaster() {
       return 'MASTER-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).substr(2, 4).toUpperCase();
+    }
+    function todayIsoDate() {
+      return new Date().toISOString().slice(0, 10);
     }
     function uuid() {
       return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
@@ -1939,6 +2015,147 @@
       return json;
     }
 
+    function normalizeSearchText(value) {
+      return String(value || '')
+        .toLocaleLowerCase('vi-VN')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/đ/g, 'd');
+    }
+
+    function filterRecipientOptions(groupKey) {
+      var group = recipientGroups[groupKey];
+      if (!group) return;
+
+      var searchInput = $(group.searchId);
+      var select = $(group.pickerId);
+      if (!searchInput || !select) return;
+
+      var normalizedSearch = normalizeSearchText(searchInput.value);
+      var matchingOrganizations = activeOrganizations.filter(function (organization) {
+        return !group.selectedCodes.includes(organization.code)
+          && (!normalizedSearch
+          || normalizeSearchText(organization.name).includes(normalizedSearch)
+          || normalizeSearchText(organization.code).includes(normalizedSearch));
+      });
+
+      select.innerHTML = '';
+      if (!matchingOrganizations.length) {
+        var emptyOption = document.createElement('option');
+        emptyOption.textContent = 'Khong tim thay co quan phu hop';
+        emptyOption.value = '';
+        select.appendChild(emptyOption);
+        select.disabled = true;
+        return;
+      }
+
+      select.disabled = false;
+      matchingOrganizations.forEach(function (organization) {
+        var option = document.createElement('option');
+        option.value = organization.code;
+        option.textContent = organization.name;
+        select.appendChild(option);
+      });
+    }
+
+    function renderSelectedRecipients(groupKey) {
+      var group = recipientGroups[groupKey];
+      if (!group) return;
+
+      var container = $(group.listId);
+      if (!container) return;
+      container.innerHTML = '';
+
+      group.selectedCodes.forEach(function (code) {
+        var organization = activeOrganizations.find(function (item) { return item.code === code; });
+        if (!organization) return;
+
+        var item = document.createElement('div');
+        item.className = 'recipient-selected';
+        var name = document.createElement('span');
+        name.textContent = organization.name;
+        var removeButton = document.createElement('button');
+        removeButton.type = 'button';
+        removeButton.className = 'btn btn-ghost btn-sm';
+        removeButton.textContent = 'Xoa';
+        removeButton.onclick = function () { removeRecipient(groupKey, code); };
+        item.appendChild(name);
+        item.appendChild(removeButton);
+        container.appendChild(item);
+      });
+    }
+
+    function getRecipientCodes(groupKey) {
+      var group = recipientGroups[groupKey];
+      return group ? group.selectedCodes.slice() : [];
+    }
+
+    function addRecipient(groupKey) {
+      var group = recipientGroups[groupKey];
+      if (!group) return;
+
+      var select = $(group.pickerId);
+      if (!select || !select.value) {
+        toast('Hay tim va chon mot co quan truoc khi them.');
+        return;
+      }
+
+      group.selectedCodes.push(select.value);
+      $(group.searchId).value = '';
+      renderSelectedRecipients(groupKey);
+      filterRecipientOptions(groupKey);
+    }
+
+    function removeRecipient(groupKey, code) {
+      var group = recipientGroups[groupKey];
+      if (!group) return;
+      group.selectedCodes = group.selectedCodes.filter(function (selectedCode) {
+        return selectedCode !== code;
+      });
+      renderSelectedRecipients(groupKey);
+      filterRecipientOptions(groupKey);
+    }
+
+    function getInitialRecipientCodes(preferredCode) {
+      if (activeOrganizations.some(function (organization) { return organization.code === preferredCode; })) {
+        return [preferredCode];
+      }
+      return activeOrganizations.length ? [activeOrganizations[0].code] : [];
+    }
+
+    function initializeRecipientGroups() {
+      recipientGroups.single.selectedCodes = getInitialRecipientCodes('B_BTC');
+      recipientGroups.distribution.selectedCodes = getInitialRecipientCodes('A_BGDDT');
+
+      Object.keys(recipientGroups).forEach(function (groupKey) {
+        var group = recipientGroups[groupKey];
+        $(group.searchId).value = '';
+        renderSelectedRecipients(groupKey);
+        filterRecipientOptions(groupKey);
+      });
+    }
+
+    async function loadActiveOrganizations() {
+      try {
+        var response = await fetch(BASE + '/registry/organizations/active');
+        var json = await response.json();
+        if (!response.ok || !json.success || !Array.isArray(json.data) || !json.data.length) {
+          throw new Error('Khong co co quan dang hoat dong');
+        }
+        activeOrganizations = json.data;
+        activeOrganizations.forEach(function (organization) {
+          ORGS[organization.code] = Object.assign({}, ORGS[organization.code] || {}, {
+            name: organization.name
+          });
+        });
+      } catch (error) {
+        console.warn('[loadActiveOrganizations]', error);
+        toast('Khong tai duoc danh sach co quan; dang dung du lieu mau.');
+      }
+
+      initializeRecipientGroups();
+    }
+
     /* PAGE SWITCH */
     function switchPage(id) {
       document.querySelectorAll('.page').forEach(function (p) { p.classList.remove('active'); });
@@ -1954,14 +2171,16 @@
       $('s-docCode').value = genDocCode();
       $('m-masterTx').value = genMaster();
       $('m-docCode').value = genDocCode();
+      $('s-issuedDate').value = todayIsoDate();
+      $('m-issuedDate').value = todayIsoDate();
       $('s-previewUrl').value = 'https://www.w3.org/WAI/WCAG21/wcag21.pdf';
       $('m-previewUrl').value = 'https://www.w3.org/WAI/WCAG21/wcag21.pdf';
+      loadActiveOrganizations();
     });
 
     function onSenderChange() {
       var code = $('s-sender').value;
       $('s-cert').value = ORGS[code].cert;
-      $('s-receiver').value = code === 'A_BGDDT' ? 'B_BTC' : 'A_BGDDT';
     }
 
     /* STEP INDICATORS */
@@ -2046,6 +2265,7 @@
         ['senderCode', 'Ma co quan gui', null],
         ['documentCode', 'Ma van ban', null],
         ['storagePath', 'Storage Path', null],
+        ['issuedDate', 'Ngay phat hanh', null],
         ['payloadChecksum', 'Checksum (SHA-256)', null],
         ['timestamp', 'Timestamp', null],
         ['signature', 'Chu ky so', null],
@@ -2206,27 +2426,29 @@
     async function singleSign() {
       if (!S.single.storagePath) { alert('Upload file truoc!'); return; }
       var sender = $('s-sender').value;
-      var receiver = $('s-receiver').value;
+      var receiverCodes = getRecipientCodes('single').filter(function (code) { return code !== sender; });
       var docCode = $('s-docCode').value;
       var cert = $('s-cert').value;
       var priority = parseInt($('s-priority').value);
       if (!docCode.trim()) { alert('Nhap ma van ban!'); return; }
+      if (!receiverCodes.length) { alert('Chon it nhat mot co quan nhan khac co quan gui!'); return; }
 
       setLoading('btn-s-sign', true, '&#9998; Ky So');
       var body = {
-        senderCode: sender, receiverCodes: [receiver],
+        senderCode: sender, receiverCodes: receiverCodes,
         documentCode: docCode, certificateSerialNumber: cert,
         storagePath: S.single.storagePath, payloadChecksum: S.single.checksum,
         priority: priority,
+        title: $('s-title').value.trim() || null,
+        documentType: $('s-docType').value || null,
+        summary: $('s-summary').value.trim() || null,
+        issuedDate: $('s-issuedDate').value || null,
         stampCoords: S.single.stampCoords || null,
         signatureCoords: S.single.signatureCoords || null
       };
       try {
         var res = await apiFetch('POST', '/simulator/sign-and-build-payload', body);
         S.single.payload = res.data;
-        S.single.payload.title = $('s-title').value;
-        S.single.payload.documentType = $('s-docType').value;
-        S.single.payload.summary = $('s-summary').value;
 
         $('s-sign-ok').style.display = 'block';
         $('s-sign-ok').innerHTML =
@@ -2322,7 +2544,7 @@
       var masterTx = $('m-masterTx').value;
       var docCode = $('m-docCode').value;
       var routing = $('m-routing').value.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
-      var distrib = $('m-distrib').value.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+      var distrib = getRecipientCodes('distribution');
       if (!masterTx || !docCode) { alert('Dien day du masterTransactionCode va documentCode!'); return; }
 
       setLoading('btn-m-sign1', true, '&#9998; A_BGDDT Ky');
@@ -2336,6 +2558,7 @@
         documentType: $('m-docType').value || null,
         priority: parseInt($('m-priority').value) || 1,
         summary: $('m-summary').value.trim() || null,
+        issuedDate: $('m-issuedDate').value || null,
         stampCoords: S.multi.stampCoords || null,
         signatureCoords: S.multi.signatureCoords || null
       };
@@ -2394,6 +2617,7 @@
       $('rv-storage').textContent = p.storagePath || '-';
       $('rv-title').textContent = p.title || '-';
       $('rv-docType').textContent = p.documentType || '-';
+      $('rv-issuedDate').textContent = p.issuedDate || '-';
       $('rv-priority').textContent = p.priority != null ? p.priority : '-';
       $('rv-summary').textContent = p.summary || '-';
 
@@ -2624,7 +2848,7 @@
       if (!S.multi.signatures || !S.multi.signatures.length) { alert('Can existingSignatures tu Buoc 1!'); return; }
       var masterTx = $('m-masterTx').value;
       var docCode  = $('m-docCode').value;
-      var distrib  = $('m-distrib').value.split(',').map(function(s){ return s.trim(); }).filter(Boolean);
+      var distrib  = getRecipientCodes('distribution');
 
       // Thu thap toa do dau va chu ky cua Ben B
       var visualLayers = mbCollectVisualLayers();
@@ -2642,6 +2866,7 @@
         documentType: S.multi.step1Payload ? S.multi.step1Payload.documentType : null,
         priority:     S.multi.step1Payload ? S.multi.step1Payload.priority     : null,
         summary:      S.multi.step1Payload ? S.multi.step1Payload.summary      : null,
+        issuedDate:   S.multi.step1Payload ? S.multi.step1Payload.issuedDate   : null,
         // Toa do dau va chu ky cua Ben B
         stampCoords:     visualLayers ? visualLayers.stamp     : null,
         signatureCoords: visualLayers ? visualLayers.signature : null

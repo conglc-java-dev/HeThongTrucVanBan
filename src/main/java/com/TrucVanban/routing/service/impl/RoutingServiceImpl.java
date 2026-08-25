@@ -48,7 +48,7 @@ public class RoutingServiceImpl implements RoutingService {
 
 
         // Idempotency Check
-        String redisKey = ROUTING_IDEMPOTENCY_KEY_PREFIX + transactionCode;
+        String redisKey = ROUTING_IDEMPOTENCY_KEY_PREFIX + transactionCode + ":" + request.getReceiverCode();
         Boolean isFirstClaim = redisTemplate.opsForValue().setIfAbsent(
                 redisKey,
                 "PROCESSING",

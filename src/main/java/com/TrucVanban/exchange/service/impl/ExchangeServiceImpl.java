@@ -53,6 +53,7 @@ import java.time.Year;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.ThreadLocalRandom;
 
 @Slf4j
@@ -588,6 +589,11 @@ public class ExchangeServiceImpl implements ExchangeService {
         Document document = Document.builder()
                 .documentCode(request.getDocumentCode())
                 .senderOrgId(senderId)
+                .title(request.getTitle())
+                .documentType(request.getDocumentType())
+                .summary(request.getSummary())
+                .extractedMetadata(request.getExtractedMetadata())
+                .issuedDate(request.getIssuedDate())
                 .build();
         document = documentRepository.saveAndFlush(document);
         log.info("[MultiSig-INITIATOR] Đã tạo Document: id={}, code={}", document.getId(), document.getDocumentCode());
@@ -616,7 +622,7 @@ public class ExchangeServiceImpl implements ExchangeService {
                 .currentStoragePath(request.getStoragePath())
                 .currentStatus(TransactionStatus.VALIDATED)
                 .signingFlowStatus(SigningFlowStatus.INITIATED)
-                .priority(1)
+                .priority(request.getPriority() != null ? request.getPriority() : 1)
                 .signatureStatus(SignatureStatus.VALID)
                 .build();
         transaction = exchangeTransactionsRepository.save(transaction);
@@ -639,6 +645,12 @@ public class ExchangeServiceImpl implements ExchangeService {
                 .currentStep(0)
                 .nextReceiver(nextReceiver)
                 .verifiedSignaturesCount(results.size())
+                .title(request.getTitle())
+                .documentType(request.getDocumentType())
+                .priority(request.getPriority())
+                .extractedMetadata(request.getExtractedMetadata())
+                .summary(request.getSummary())
+                .issuedDate(request.getIssuedDate())
                 .build();
     }
 
@@ -648,6 +660,7 @@ public class ExchangeServiceImpl implements ExchangeService {
     private MultiSignatureResponse handleReviewer(MultiSignatureRequest request,
                                                    List<SignatureVerificationResult> results) {
         ExchangeTransactions transaction = findTransactionByMasterCode(request.getMasterTransactionCode());
+        validateIssuedDate(transaction, request.getIssuedDate());
 
         int newStep = transaction.getCurrentStep() + 1;
         transaction.setCurrentStep(newStep);
@@ -676,6 +689,12 @@ public class ExchangeServiceImpl implements ExchangeService {
                 .currentStep(newStep)
                 .nextReceiver(nextReceiver)
                 .verifiedSignaturesCount(results.size())
+                .title(request.getTitle())
+                .documentType(request.getDocumentType())
+                .priority(request.getPriority())
+                .extractedMetadata(request.getExtractedMetadata())
+                .summary(request.getSummary())
+                .issuedDate(request.getIssuedDate())
                 .build();
     }
 
@@ -686,6 +705,7 @@ public class ExchangeServiceImpl implements ExchangeService {
     private MultiSignatureResponse handleFinalApprover(MultiSignatureRequest request,
                                                         List<SignatureVerificationResult> results) {
         ExchangeTransactions transaction = findTransactionByMasterCode(request.getMasterTransactionCode());
+        validateIssuedDate(transaction, request.getIssuedDate());
 
         transaction.setCurrentStoragePath(request.getStoragePath());
         transaction.setSigningFlowStatus(SigningFlowStatus.COMPLETED_READY_FOR_DISTRIBUTION);
@@ -713,6 +733,12 @@ public class ExchangeServiceImpl implements ExchangeService {
                 .currentStep(transaction.getCurrentStep())
                 .nextReceiver(null)
                 .verifiedSignaturesCount(results.size())
+                .title(request.getTitle())
+                .documentType(request.getDocumentType())
+                .priority(request.getPriority())
+                .extractedMetadata(request.getExtractedMetadata())
+                .summary(request.getSummary())
+                .issuedDate(request.getIssuedDate())
                 .build();
     }
 
@@ -757,7 +783,7 @@ public class ExchangeServiceImpl implements ExchangeService {
                 .put("masterTransactionCode", transaction.getMasterTransactionCode())
                 .put("transactionCode", transaction.getTransactionCode())
                 .put("receiverCode", receiverCode)
-                .put("currentStoragePath", transaction.getCurrentStoragePath());
+                .put("storagePath", transaction.getCurrentStoragePath());
 
         return OutboxEvent.builder()
                 .aggregateType(OutboxEventConstants.AGGREGATE_TYPE_EXCHANGE_TRANSACTION)
@@ -771,6 +797,16 @@ public class ExchangeServiceImpl implements ExchangeService {
         return exchangeTransactionsRepository.findByMasterTransactionCode(masterTransactionCode)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Không tìm thấy giao dịch với masterTransactionCode: " + masterTransactionCode));
+    }
+
+    private void validateIssuedDate(ExchangeTransactions transaction, String issuedDate) {
+        Document document = documentRepository.findById(transaction.getDocumentId())
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Không tìm thấy văn bản của giao dịch: " + transaction.getTransactionCode()));
+        if (!Objects.equals(document.getIssuedDate(), issuedDate)) {
+            throw new InvalidInputException(
+                    "issuedDate phải giữ nguyên theo văn bản đã được khởi tạo ở bước ký đầu tiên");
+        }
     }
 
     private SignatureRequest getLastSignature(List<SignatureRequest> signatures) {

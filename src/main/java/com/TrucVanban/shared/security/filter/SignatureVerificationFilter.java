@@ -176,6 +176,7 @@ public class SignatureVerificationFilter extends OncePerRequestFilter {
         String signature = getTextSafe(body, "signature");
         String documentCode = getTextSafe(body, "documentCode");
         String payloadChecksum = getTextSafe(body, "payloadChecksum");
+        String issuedDate = getTextSafe(body, "issuedDate");
         List<String> receivers = getReceiversSafe(body);
 
         log.info("[SignatureFilter-Legacy] Bắt đầu xác minh gói tin: sender={}, serial={}", senderCode, serialNumber);
@@ -206,7 +207,7 @@ public class SignatureVerificationFilter extends OncePerRequestFilter {
         }
 
         String canonicalString = canonicalStringBuilder.buildLegacy(
-                serialNumber, documentCode, payloadChecksum, receivers, senderCode, timestampStr);
+                serialNumber, documentCode, payloadChecksum, receivers, senderCode, timestampStr, issuedDate);
         log.info("[SignatureFilter-Legacy] [Chốt 3] Canonical String:\n{}", canonicalString);
 
         boolean isValid = com.TrucVanban.shared.utils.SignatureVerifier.verify(

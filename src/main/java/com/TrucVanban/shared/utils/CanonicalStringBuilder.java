@@ -36,7 +36,8 @@ public class CanonicalStringBuilder {
                 request.getPayloadChecksum(),
                 request.getReceiverCodes(),
                 request.getSenderCode(),
-                request.getTimestamp()
+                request.getTimestamp(),
+                request.getIssuedDate()
         );
     }
 
@@ -48,6 +49,26 @@ public class CanonicalStringBuilder {
             String senderCode,
             String timestamp
     ) {
+        return buildLegacy(
+                certificateSerialNumber,
+                documentCode,
+                payloadChecksum,
+                receivers,
+                senderCode,
+                timestamp,
+                null
+        );
+    }
+
+    public String buildLegacy(
+            String certificateSerialNumber,
+            String documentCode,
+            String payloadChecksum,
+            List<String> receivers,
+            String senderCode,
+            String timestamp,
+            String issuedDate
+    ) {
         List<String> sortedReceivers = new ArrayList<>();
         if (receivers != null && !receivers.isEmpty()) {
             sortedReceivers.addAll(receivers);
@@ -58,6 +79,9 @@ public class CanonicalStringBuilder {
         TreeMap<String, String> canonicalMap = new TreeMap<>();
         canonicalMap.put("certificate_serial_number", certificateSerialNumber);
         canonicalMap.put("document_code", documentCode);
+        if (issuedDate != null && !issuedDate.isBlank()) {
+            canonicalMap.put("issued_date", issuedDate);
+        }
         canonicalMap.put("payload_checksum", payloadChecksum);
         canonicalMap.put("receivers", receiversValue);
         canonicalMap.put("sender_code", senderCode);
@@ -81,6 +105,9 @@ public class CanonicalStringBuilder {
         canonicalMap.put("current_sender_code", request.getCurrentSenderCode());
         canonicalMap.put("distribution_list", distributionListStr);
         canonicalMap.put("document_code", request.getDocumentCode());
+        if (request.getIssuedDate() != null && !request.getIssuedDate().isBlank()) {
+            canonicalMap.put("issued_date", request.getIssuedDate());
+        }
         canonicalMap.put("master_transaction_code", request.getMasterTransactionCode());
         canonicalMap.put("request_timestamp", request.getRequestTimestamp());
         canonicalMap.put("routing_list", routingListStr);

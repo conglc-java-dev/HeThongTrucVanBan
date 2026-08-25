@@ -29,4 +29,5 @@ public class MultiSignatureResponse {
     private Integer priority;
     private JsonNode extractedMetadata;
     private String summary;
+    private String issuedDate;
 }
