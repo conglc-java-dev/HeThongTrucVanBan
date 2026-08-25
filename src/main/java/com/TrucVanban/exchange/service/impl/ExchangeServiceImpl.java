@@ -1,15 +1,20 @@
 package com.TrucVanban.exchange.service.impl;
 
+import com.TrucVanban.exchange.dto.request.RevokeDocumentRequest;
+import com.TrucVanban.exchange.dto.request.UpdateDocumentRequest;
 import com.TrucVanban.exchange.dto.request.receive.ReceiveDocumentRequest;
 import com.TrucVanban.exchange.dto.request.send.ExchangeDocumentRequest;
 import com.TrucVanban.exchange.dto.request.send.MultiSignatureRequest;
 import com.TrucVanban.exchange.dto.request.send.SignatureRequest;
+import com.TrucVanban.exchange.dto.response.DocumentDetailResponse;
 import com.TrucVanban.exchange.dto.response.ExchangeDocumentResponse;
 import com.TrucVanban.exchange.dto.response.MultiSignatureResponse;
 import com.TrucVanban.exchange.dto.response.ReceiveDocumentResponse;
+import com.TrucVanban.exchange.dto.response.RevokeDocumentResponse;
 import com.TrucVanban.exchange.dto.response.TransactionReceivedStatusResponse;
 import com.TrucVanban.exchange.dto.response.TransactionSendStatusResponse;
 import com.TrucVanban.exchange.entity.*;
+import com.TrucVanban.exchange.enums.DocumentStatus;
 import com.TrucVanban.exchange.enums.SignatureStatus;
 import com.TrucVanban.exchange.enums.SigningFlowStatus;
 import com.TrucVanban.exchange.enums.TransactionStatus;
@@ -41,11 +46,14 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Duration;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.Year;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
 
 @Slf4j
 @Service
@@ -57,9 +65,7 @@ public class ExchangeServiceImpl implements ExchangeService {
     private static final String IDEMPOTENCY_COMPLETED_VALUE = "COMPLETED";
 
     RegistryService registryService;
-
     DocumentMapper documentMapper;
-
     DocumentRepository documentRepository;
     ExchangeTransactionsRepository exchangeTransactionsRepository;
     DocumentVersionRepository documentVersionRepository;
@@ -72,11 +78,12 @@ public class ExchangeServiceImpl implements ExchangeService {
     MultiSignatureValidator multiSignatureValidator;
     ObjectMapper objectMapper;
     StringRedisTemplate redisTemplate;
+    AuditLogRepository auditLogRepository;
     private final Object lock  = new Object();
 
     @Override
     @Transactional
-    public  List<ExchangeDocumentResponse> exchangeDocument(ExchangeDocumentRequest request, String idempotencyKey) {
+    public List<ExchangeDocumentResponse> exchangeDocument(ExchangeDocumentRequest request, String idempotencyKey) {
         log.info("[exchangeDocument] Bắt đầu gửi văn bản: sender={}, receivers={}",
                 request.getSenderCode(), request.getReceiverCodes());
         if (StringUtils.isNullOrBlank(idempotencyKey)) {
@@ -101,6 +108,19 @@ public class ExchangeServiceImpl implements ExchangeService {
 
             Long senderId = registryService.getOrganizationIdByCode(request.getSenderCode());
             List<Long> receiverIds = registryService.getOrganizationIdsByCode(request.getReceiverCodes());
+
+            // Xử lý thay thế văn bản nếu có replacedDocumentCode
+            Document replacedDoc = null;
+            if (request.getReplacedDocumentCode() != null && !request.getReplacedDocumentCode().isBlank()) {
+                replacedDoc = documentRepository.findByDocumentCode(request.getReplacedDocumentCode())
+                        .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy văn bản cần thay thế: " + request.getReplacedDocumentCode()));
+                if (!senderId.equals(replacedDoc.getSenderOrgId())) {
+                    throw new ForbiddenException("Chỉ cơ quan gửi gốc mới có quyền thay thế văn bản này");
+                }
+                if (replacedDoc.getStatus() != DocumentStatus.ACTIVE && replacedDoc.getStatus() != DocumentStatus.RECALLED) {
+                    throw new BusinessLogicException("Không thể thay thế văn bản có trạng thái: " + replacedDoc.getStatus());
+                }
+            }
 
             // Lưu Document
             Document document = documentMapper.toDocument(request);
@@ -129,14 +149,29 @@ public class ExchangeServiceImpl implements ExchangeService {
             log.info("[exchangeDocument] Lưu document version thành công: documentId={}, version={}, path={}",
                     document.getId(), versionNo, request.getStoragePath());
 
+            // Lưu quan hệ thay thế nếu có
+            if (replacedDoc != null) {
+                replacedDoc.setStatus(DocumentStatus.REPLACED);
+                documentRepository.save(replacedDoc);
 
+                DocumentReplacement replacement = DocumentReplacement.builder()
+                        .replacedDocumentId(replacedDoc.getId())
+                        .replacementDocumentId(document.getId())
+                        .reason("Thay thế bởi văn bản " + document.getDocumentCode())
+                        .build();
+                documentReplacementRepository.save(replacement);
+
+                auditLogService.log("DOCUMENT_REPLACED", "ORGANIZATION", request.getSenderCode(), "SUCCESS",
+                        String.format("{\"oldDoc\":\"%s\",\"newDoc\":\"%s\"}", replacedDoc.getDocumentCode(), document.getDocumentCode()),
+                        null, document.getId());
+            }
 
             // Tạo ExchangeTransactions cho từng receiver
             List<ExchangeDocumentResponse> exchangeDocumentResponses = new ArrayList<>();
             final Long finalDocumentId = document.getId();
             List<ExchangeTransactions> listTransaction = new ArrayList<>();
             for (Long receiverId : receiverIds) {
-                String transactionCode = "TXN-" + Year.now().getValue() + "-" + finalDocumentId + "-" + receiverId;
+                String transactionCode = generateTransactionCode("EXCHANGE");
                 Integer priority = NumberUtils.isNullOrNegative(request.getPriority()) ? 0 : request.getPriority();
 
                 ExchangeTransactions transaction = ExchangeTransactions.builder()
@@ -150,7 +185,6 @@ public class ExchangeServiceImpl implements ExchangeService {
                         .signatureStatus(SignatureStatus.VALID)
                         .build();
                 listTransaction.add(transaction);
-
 
                 exchangeDocumentResponses.add(
                         ExchangeDocumentResponse.builder()
@@ -188,8 +222,8 @@ public class ExchangeServiceImpl implements ExchangeService {
             throw e;
         }
     }
-    private void updateIdempotencyAfterCommit(String redisKey) {
 
+    private void updateIdempotencyAfterCommit(String redisKey) {
         TransactionSynchronizationManager.registerSynchronization(
                 new TransactionSynchronization() {
                     @Override
@@ -200,10 +234,8 @@ public class ExchangeServiceImpl implements ExchangeService {
                                 Duration.ofMinutes(10)
                         );
                     }
-
                 }
         );
-
     }
 
     private String buildExchangeDocumentIdempotencyKey(String idempotencyKey) {
@@ -323,6 +355,138 @@ public class ExchangeServiceImpl implements ExchangeService {
 
     @Override
     @Transactional
+    public RevokeDocumentResponse revokeDocument(String documentCode, RevokeDocumentRequest request) {
+        log.info("[revokeDocument] Thu hồi văn bản: documentCode={}, requester={}", documentCode, request.getRequesterCode());
+        Document document = documentRepository.findByDocumentCode(documentCode)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy văn bản: " + documentCode));
+        Long requesterId = registryService.getOrganizationIdByCode(request.getRequesterCode());
+        if (!requesterId.equals(document.getSenderOrgId())) {
+            throw new ForbiddenException("Chỉ có cơ quan gửi gốc mới được phép thu hồi văn bản này");
+        }
+        if (document.getStatus() != DocumentStatus.ACTIVE) {
+            throw new BusinessLogicException("Không thể thu hồi văn bản có trạng thái: " + document.getStatus().name());
+        }
+
+        document.setStatus(DocumentStatus.RECALLED);
+        documentRepository.save(document);
+
+        List<ExchangeTransactions> relatedTransactions = exchangeTransactionsRepository.findByDocumentId(document.getId());
+        Long receiverId = relatedTransactions.isEmpty() ? requesterId : relatedTransactions.get(0).getReceiverOrgId();
+
+        String transactionCode = generateTransactionCode("REVOKE");
+
+        ExchangeTransactions revokeTxn = ExchangeTransactions.builder()
+                .transactionCode(transactionCode)
+                .documentId(document.getId())
+                .senderOrgId(requesterId)
+                .receiverOrgId(receiverId)
+                .priority(1)
+                .currentStatus(TransactionStatus.RECEIVED)
+                .signatureStatus(SignatureStatus.VALID)
+                .build();
+        exchangeTransactionsRepository.save(revokeTxn);
+
+        auditLogService.log("DOCUMENT_REVOKED", "ORGANIZATION", request.getRequesterCode(), "SUCCESS",
+                String.format("{\"documentCode\":\"%s\",\"reason\":\"%s\",\"transactionCode\":\"%s\"}", documentCode, request.getReason(), transactionCode),
+                null, document.getId());
+
+        log.info("[revokeDocument] Thu hồi văn bản thành công: documentCode={}, txn={}", documentCode, transactionCode);
+        return RevokeDocumentResponse.builder()
+                .transactionCode(transactionCode)
+                .build();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public DocumentDetailResponse getDocumentDetail(String documentCode) {
+        log.info("[getDocumentDetail] Tra cứu chi tiết văn bản: documentCode={}", documentCode);
+        Document document = documentRepository.findByDocumentCode(documentCode)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy văn bản: " + documentCode));
+        List<DocumentVersion> versions = documentVersionRepository.findAllByDocumentIdOrderByVersionNoAsc(document.getId());
+        List<DocumentReplacement> replacements = documentReplacementRepository.findAllRelatedByDocumentId(document.getId());
+        List<AuditLog> auditLogs = auditLogRepository.findByDocumentIdOrderByCreatedAtDesc(document.getId());
+        List<DocumentDetailResponse.VersionResponse> versionResponses = versions.stream()
+                .map(v -> DocumentDetailResponse.VersionResponse.builder()
+                        .versionNo(v.getVersionNo()).storagePath(v.getStoragePath())
+                        .checksum(v.getChecksum()).updateReason(v.getUpdateReason())
+                        .createdBy(v.getCreatedBy()).createdAt(v.getCreatedAt()).changedFields(null).build())
+                .toList();
+        List<DocumentDetailResponse.ReplacementRelationResponse> replacementResponses = replacements.stream().map(r -> {
+            String replacementCode = documentRepository.findById(r.getReplacementDocumentId()).map(Document::getDocumentCode).orElse(null);
+            String replacedCode = documentRepository.findById(r.getReplacedDocumentId()).map(Document::getDocumentCode).orElse(null);
+            return DocumentDetailResponse.ReplacementRelationResponse.builder()
+                    .replacementDocumentCode(replacementCode).replacedDocumentCode(replacedCode)
+                    .reason(r.getReason()).createdAt(r.getCreatedAt()).build();
+        }).toList();
+        List<DocumentDetailResponse.AuditResponse> auditResponses = auditLogs.stream()
+                .map(a -> DocumentDetailResponse.AuditResponse.builder()
+                        .action(a.getAction()).actorType(a.getActorType()).actorId(a.getActorId())
+                        .result(a.getResult()).detail(a.getDetail() != null ? a.getDetail().toString() : null)
+                        .createdAt(a.getCreatedAt()).build())
+                .toList();
+        return DocumentDetailResponse.builder()
+                .documentCode(document.getDocumentCode()).title(document.getTitle())
+                .summary(document.getSummary()).documentType(document.getDocumentType())
+                .extractedMetadata(document.getExtractedMetadata()).senderOrgId(document.getSenderOrgId())
+                .status(document.getStatus()).currentVersion(document.getCurrentVersion())
+                .versions(versionResponses).historyVersions(versionResponses).replacements(replacementResponses).auditLogs(auditResponses).build();
+    }
+
+    @Override
+    @Transactional
+    public void updateDocument(String documentCode, UpdateDocumentRequest request) {
+        log.info("[updateDocument] Cập nhật văn bản: documentCode={}, requester={}", documentCode, request.getRequesterCode());
+        Document document = documentRepository.findByDocumentCode(documentCode)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy văn bản: " + documentCode));
+        Long requesterId = registryService.getOrganizationIdByCode(request.getRequesterCode());
+        if (!requesterId.equals(document.getSenderOrgId())) {
+            throw new ForbiddenException("Chỉ có cơ quan gửi gốc mới được phép chỉnh sửa văn bản này");
+        }
+        if (document.getStatus() != DocumentStatus.ACTIVE) {
+            throw new BusinessLogicException("Không thể chỉnh sửa văn bản có trạng thái: " + document.getStatus().name());
+        }
+
+        if (request.getTitle() != null && !request.getTitle().equals(document.getTitle())) {
+            document.setTitle(request.getTitle());
+        }
+        if (request.getSummary() != null && !request.getSummary().equals(document.getSummary())) {
+            document.setSummary(request.getSummary());
+        }
+        if (request.getDocumentType() != null && !request.getDocumentType().equals(document.getDocumentType())) {
+            document.setDocumentType(request.getDocumentType());
+        }
+        if (request.getExtractedMetadata() != null && !request.getExtractedMetadata().equals(document.getExtractedMetadata())) {
+            document.setExtractedMetadata(request.getExtractedMetadata());
+        }
+
+        // Luôn tạo version mới khi gọi PUT update
+        DocumentVersion lastVersion = documentVersionRepository.findTopByDocumentIdOrderByVersionNoDesc(document.getId()).orElse(null);
+        int newVersionNo = lastVersion != null ? lastVersion.getVersionNo() + 1 : 1;
+        String storagePath = (request.getStoragePath() != null && !request.getStoragePath().isBlank()) ? request.getStoragePath() : (lastVersion != null ? lastVersion.getStoragePath() : "");
+        String checksum = (request.getPayloadChecksum() != null && !request.getPayloadChecksum().isBlank()) ? request.getPayloadChecksum() : (lastVersion != null ? lastVersion.getChecksum() : "");
+        String reason = (request.getUpdateReason() != null && !request.getUpdateReason().isBlank()) ? request.getUpdateReason() : "Cập nhật thông tin văn bản";
+        
+        DocumentVersion newVersion = DocumentVersion.builder()
+                .documentId(document.getId())
+                .versionNo(newVersionNo)
+                .storagePath(storagePath)
+                .checksum(checksum)
+                .updateReason(reason)
+                .createdBy(request.getRequesterCode())
+                .build();
+        documentVersionRepository.save(newVersion);
+        document.setCurrentVersion(newVersionNo);
+        log.info("[updateDocument] Tạo version mới: versionNo={}, documentCode={}", newVersionNo, documentCode);
+
+        documentRepository.save(document);
+        auditLogService.log("DOCUMENT_UPDATED", "ORGANIZATION", request.getRequesterCode(), "SUCCESS",
+                String.format("{\"documentCode\":\"%s\",\"updateReason\":\"%s\"}", documentCode, reason),
+                null, document.getId());
+        log.info("[updateDocument] Cập nhật văn bản thành công: documentCode={}", documentCode);
+    }
+
+    @Override
+    @Transactional
     public MultiSignatureResponse processMultiSignatureDocument(MultiSignatureRequest request, String idempotencyKey) {
         log.info("[MultiSig] Bắt đầu xử lý: masterTxCode={}, sender={}, sigs={}",
                 request.getMasterTransactionCode(), request.getCurrentSenderCode(),
@@ -343,7 +507,7 @@ public class ExchangeServiceImpl implements ExchangeService {
         }
 
         try {
-            // ---- Tầng 2: Document Layer — Xác minh PDF đa chữ ký ----
+            // ---- Tầng 2: Document Layer – Xác minh PDF và chữ ký ----
             List<SignatureVerificationResult> verificationResults;
             try {
                 verificationResults = multiSignatureValidator.verifyAll(request.getStoragePath(), request.getSignatures());
@@ -394,7 +558,6 @@ public class ExchangeServiceImpl implements ExchangeService {
             throw e;
         }
     }
-
 
     private MultiSignatureResponse handleInitiator(MultiSignatureRequest request,
                                                     List<SignatureVerificationResult> results) {
@@ -476,11 +639,6 @@ public class ExchangeServiceImpl implements ExchangeService {
                 .currentStep(0)
                 .nextReceiver(nextReceiver)
                 .verifiedSignaturesCount(results.size())
-                .title(request.getTitle())
-                .documentType(request.getDocumentType())
-                .priority(request.getPriority())
-                .extractedMetadata(request.getExtractedMetadata())
-                .summary(request.getSummary())
                 .build();
     }
 
@@ -518,11 +676,6 @@ public class ExchangeServiceImpl implements ExchangeService {
                 .currentStep(newStep)
                 .nextReceiver(nextReceiver)
                 .verifiedSignaturesCount(results.size())
-                .title(request.getTitle())
-                .documentType(request.getDocumentType())
-                .priority(request.getPriority())
-                .extractedMetadata(request.getExtractedMetadata())
-                .summary(request.getSummary())
                 .build();
     }
 
@@ -560,15 +713,9 @@ public class ExchangeServiceImpl implements ExchangeService {
                 .currentStep(transaction.getCurrentStep())
                 .nextReceiver(null)
                 .verifiedSignaturesCount(results.size())
-                .title(request.getTitle())
-                .documentType(request.getDocumentType())
-                .priority(request.getPriority())
-                .extractedMetadata(request.getExtractedMetadata())
-                .summary(request.getSummary())
                 .build();
     }
 
-    
     private void saveDocumentSignatures(Long transactionId,
                                          List<SignatureVerificationResult> results,
                                          MultiSignatureRequest request) {
@@ -604,7 +751,6 @@ public class ExchangeServiceImpl implements ExchangeService {
         if (!toSave.isEmpty()) documentSignatureRepository.saveAll(toSave);
     }
 
-   
     private OutboxEvent toMultiSigOutboxEvent(ExchangeTransactions transaction,
                                                String receiverCode, String eventType) {
         var payload = objectMapper.createObjectNode()
@@ -644,7 +790,9 @@ public class ExchangeServiceImpl implements ExchangeService {
         }
     }
 
-    private String generateTransactionCode(String masterTransactionCode) {
-        return "TXN-" + Year.now().getValue() + "-" + System.currentTimeMillis() % 100000;
+    private String generateTransactionCode(String prefix) {
+        String date = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MMdd"));
+        String random = String.format("%05d", ThreadLocalRandom.current().nextInt(10000, 99999));
+        return "TXN-" + date + "-" + random;
     }
 }

@@ -40,6 +40,8 @@ public class ExchangeDocumentRequest {
     @NotBlank(message = "Đường dẫn lưu trữ file (storagePath) là bắt buộc")
     private String storagePath;
 
+    private String replacedDocumentCode;
+
     private String title;
     private String documentType;
     private Integer priority;
