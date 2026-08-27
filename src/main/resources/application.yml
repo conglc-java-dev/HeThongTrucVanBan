@@ -75,6 +75,11 @@ security:
     master-key: ${HMAC_MASTER_KEY:dev-local-master-key-change-in-production}
 
 app:
+  visual-signature:
+    # Chỉ dùng tạm khi máy chủ asset dùng chứng thư chưa được JVM tin cậy.
+    # Môi trường production phải đặt VISUAL_SIGNATURE_ALLOW_INSECURE_SSL=false.
+    allow-insecure-ssl: ${VISUAL_SIGNATURE_ALLOW_INSECURE_SSL:true}
+    external-asset-timeout-ms: ${VISUAL_SIGNATURE_EXTERNAL_ASSET_TIMEOUT_MS:10000}
   client-simulator:
     gateway-url: ${CLIENT_SIMULATOR_GATEWAY_URL:http://localhost:8080/api/v1/exchange}
     multi-sig-gateway-url: ${CLIENT_SIMULATOR_MULTI_SIG_URL:http://localhost:8080/api/v1/exchange-documents/signatures}

@@ -128,6 +128,10 @@ public class ClientSimulatorServiceImpl implements ClientSimulatorService {
         internalRequest.setStoragePath(effectiveStoragePath);
         internalRequest.setCertificateSerialNumber(request.getCertificateSerialNumber());
         internalRequest.setPriority(request.getPriority() != null ? request.getPriority() : 1);
+        internalRequest.setTitle(request.getTitle());
+        internalRequest.setDocumentType(request.getDocumentType());
+        internalRequest.setSummary(request.getSummary());
+        internalRequest.setIssuedDate(request.getIssuedDate());
 
         String currentTimestamp = ZonedDateTime.now(ZoneId.of("Asia/Ho_Chi_Minh"))
                 .format(DateTimeFormatter.ISO_OFFSET_DATE_TIME);
@@ -135,7 +139,7 @@ public class ClientSimulatorServiceImpl implements ClientSimulatorService {
 
         // ---- Bước 3: Ký transport signature ----
         String canonicalString = canonicalStringBuilder.build(internalRequest);
-        PrivateKey privateKey = loadPrivateKeyFromClasspath("keys/private_key.pem");
+        PrivateKey privateKey = loadPrivateKeyForSender(request.getSenderCode());
 
         Signature signatureInstance = Signature.getInstance("SHA256withRSA");
         signatureInstance.initSign(privateKey);
@@ -266,6 +270,7 @@ public class ClientSimulatorServiceImpl implements ClientSimulatorService {
         payload.setPriority(request.getPriority());
         payload.setExtractedMetadata(request.getExtractedMetadata());
         payload.setSummary(request.getSummary());
+        payload.setIssuedDate(request.getIssuedDate());
 
         // ---- Bước 3: Ký Transport Layer bằng Private Key của cơ quan ----
         // Transport signature được tính SAU khi storagePath đã là file có dấu

@@ -251,4 +251,14 @@ public class RegistryServiceImpl implements RegistryService {
                         .build())
                 .collect(java.util.stream.Collectors.toList());
     }
+
+    @Override
+    public List<ActiveOrganizationResponse> getActiveOrganizations() {
+        return organizationRepository.findByStatusOrderByNameAsc(OrganizationStatus.ACTIVE).stream()
+                .map(organization -> ActiveOrganizationResponse.builder()
+                        .code(organization.getCode())
+                        .name(organization.getName())
+                        .build())
+                .toList();
+    }
 }
