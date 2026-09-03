@@ -22,6 +22,7 @@ public interface DocumentMapper {
     @Mapping(source = "documentType", target = "documentType")
     @Mapping(source = "extractedMetadata", target = "extractedMetadata")
     @Mapping(source = "summary", target = "summary")
+    @Mapping(source = "issuedDate", target = "issuedDate")
     Document toDocument(ExchangeDocumentRequest request);
 
     @Mapping(source = "businessStatusCode", target = "businessStatusCode")

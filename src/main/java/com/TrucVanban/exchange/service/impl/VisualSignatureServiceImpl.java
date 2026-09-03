@@ -6,6 +6,7 @@ import com.TrucVanban.registry.entity.OrganizationVisualAsset;
 import com.TrucVanban.registry.enums.AssetType;
 import com.TrucVanban.registry.repository.OrganizationVisualAssetRepository;
 import com.TrucVanban.shared.service.MinioService;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pdfbox.Loader;
@@ -14,11 +15,21 @@ import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
+import java.net.HttpURLConnection;
+
+import java.net.URI;
+import java.security.GeneralSecurityException;
+import java.security.SecureRandom;
+import java.security.cert.X509Certificate;
 import java.util.UUID;
+
+import javax.net.ssl.*;
 
 /**
  * Triển khai vẽ con dấu và chữ ký trực quan lên file PDF bằng Apache PDFBox.
@@ -31,8 +42,49 @@ public class VisualSignatureServiceImpl implements VisualSignatureService {
         private final MinioService minioService;
         private final OrganizationVisualAssetRepository visualAssetRepository;
 
+        @Value("${app.visual-signature.allow-insecure-ssl}")
+        private boolean allowInsecureSsl;
+
+        @Value("${app.visual-signature.external-asset-timeout-ms}")
+        private int externalAssetTimeoutMs;
+
+        private SSLSocketFactory insecureSslSocketFactory;
+
         /** Prefix thư mục MinIO cho file PDF đã vẽ dấu, tránh lẫn với file gốc. */
         private static final String SIGNED_PDF_PREFIX = "signed-pdfs/";
+
+        /**
+         * Chuẩn bị SSL context cục bộ cho luồng tải asset khi cấu hình tạm thời cho
+         * phép dùng chứng thư không tin cậy. Không thay đổi SSL mặc định của JVM.
+         */
+        @PostConstruct
+        void initializeInsecureSslSupport() throws GeneralSecurityException {
+                if (!allowInsecureSsl) {
+                        return;
+                }
+
+                TrustManager[] trustManagers = { new X509TrustManager() {
+                        @Override
+                        public void checkClientTrusted(X509Certificate[] chain, String authType) {
+                                // Chỉ dùng cho luồng tải asset được cấu hình tạm thời.
+                        }
+
+                        @Override
+                        public void checkServerTrusted(X509Certificate[] chain, String authType) {
+                                // Chỉ dùng cho luồng tải asset được cấu hình tạm thời.
+                        }
+
+                        @Override
+                        public X509Certificate[] getAcceptedIssuers() {
+                                return new X509Certificate[0];
+                        }
+                } };
+
+                SSLContext sslContext = SSLContext.getInstance("TLS");
+                sslContext.init(null, trustManagers, new SecureRandom());
+                insecureSslSocketFactory = sslContext.getSocketFactory();
+                log.warn("[VisualSig] Xác thực chứng thư SSL đang được tắt tạm thời khi tải asset ngoài.");
+        }
 
         @Override
         public String applyVisualLayers(String storagePath, String signerCode,
@@ -99,7 +151,7 @@ public class VisualSignatureServiceImpl implements VisualSignatureService {
                 log.info("[VisualSig] Tải ảnh {} từ: {}", assetType, imageUrl);
 
                 if (imageUrl.startsWith("http://") || imageUrl.startsWith("https://")) {
-                        try (InputStream stream = java.net.URI.create(imageUrl).toURL().openStream()) {
+                        try (InputStream stream = openExternalImageStream(imageUrl)) {
                                 byte[] bytes = stream.readAllBytes();
                                 log.info("[VisualSig] Tải từ URL ngoài thành công: {} bytes", bytes.length);
                                 return bytes;
@@ -111,6 +163,21 @@ public class VisualSignatureServiceImpl implements VisualSignatureService {
                                 return bytes;
                         }
                 }
+        }
+
+        private InputStream openExternalImageStream(String imageUrl) throws IOException {
+                URI imageUri = URI.create(imageUrl);
+                HttpURLConnection connection = (HttpURLConnection) imageUri.toURL().openConnection();
+                connection.setConnectTimeout(externalAssetTimeoutMs);
+                connection.setReadTimeout(externalAssetTimeoutMs);
+
+                if (allowInsecureSsl && connection instanceof HttpsURLConnection httpsConnection) {
+                        httpsConnection.setSSLSocketFactory(insecureSslSocketFactory);
+                        httpsConnection.setHostnameVerifier((hostname, sslSession) -> true);
+                        log.warn("[VisualSig] Bỏ qua xác thực SSL tạm thời cho host={}", imageUri.getHost());
+                }
+
+                return connection.getInputStream();
         }
 
         /**

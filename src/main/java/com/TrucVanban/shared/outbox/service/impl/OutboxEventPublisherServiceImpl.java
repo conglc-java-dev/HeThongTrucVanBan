@@ -1,8 +1,12 @@
 package com.TrucVanban.shared.outbox.service.impl;
 
+import com.TrucVanban.exchange.entity.Document;
 import com.TrucVanban.exchange.entity.ExchangeTransactions;
 import com.TrucVanban.exchange.enums.TransactionStatus;
+import com.TrucVanban.exchange.repository.DocumentRepository;
 import com.TrucVanban.exchange.repository.ExchangeTransactionsRepository;
+import com.TrucVanban.registry.entity.Organization;
+import com.TrucVanban.registry.service.RegistryService;
 import com.TrucVanban.routing.dto.request.RoutingRequest;
 import com.TrucVanban.shared.config.RabbitMQConfig;
 import com.TrucVanban.shared.outbox.OutboxEventConstants;
@@ -35,6 +39,8 @@ public class OutboxEventPublisherServiceImpl implements OutboxEventPublisherServ
 
     OutboxEventRepository outboxEventRepository;
     ExchangeTransactionsRepository exchangeTransactionsRepository;
+    DocumentRepository documentRepository;
+    RegistryService registryService;
     RabbitTemplate rabbitTemplate;
     ObjectMapper objectMapper;
 
@@ -55,11 +61,11 @@ public class OutboxEventPublisherServiceImpl implements OutboxEventPublisherServ
     }
 
     private void publish(OutboxEvent event) {
-        if (!OutboxEventConstants.EVENT_TYPE_ROUTING_REQUEST.equals(event.getEventType())) {
+        if (!isSupportedEventType(event.getEventType())) {
             throw new IllegalArgumentException("Unsupported outbox event type: " + event.getEventType());
         }
 
-        RoutingRequest routingRequest = objectMapper.convertValue(event.getPayload(), RoutingRequest.class);
+        RoutingRequest routingRequest = toRoutingRequest(event);
         CorrelationData correlationData = new CorrelationData(event.getEventId().toString());
         rabbitTemplate.convertAndSend(
                 RabbitMQConfig.DOCUMENT_EXCHANGE,
@@ -71,6 +77,57 @@ public class OutboxEventPublisherServiceImpl implements OutboxEventPublisherServ
         markTransactionRouted(event);
         log.info("[outbox] Đã publish routing message: eventId={}, transactionCode={}",
                 event.getEventId(), routingRequest.getTransactionCode());
+    }
+
+    private boolean isSupportedEventType(String eventType) {
+        return OutboxEventConstants.EVENT_TYPE_ROUTING_REQUEST.equals(eventType)
+                || OutboxEventConstants.EVENT_TYPE_DISTRIBUTION_REQUEST.equals(eventType);
+    }
+
+    private RoutingRequest toRoutingRequest(OutboxEvent event) {
+        if (OutboxEventConstants.EVENT_TYPE_DISTRIBUTION_REQUEST.equals(event.getEventType())) {
+            return buildDistributionRoutingRequest(event);
+        }
+        return objectMapper.convertValue(event.getPayload(), RoutingRequest.class);
+    }
+
+    /**
+     * Dựng đầy đủ routing message cho event phân phối. Việc dựng lại từ dữ liệu
+     * nguồn cũng giúp các DISTRIBUTION_REQUEST đã được tạo với payload cũ
+     * (currentStoragePath) vẫn gửi được.
+     */
+    private RoutingRequest buildDistributionRoutingRequest(OutboxEvent event) {
+        String receiverCode = event.getPayload().path("receiverCode").asText(null);
+        if (receiverCode == null || receiverCode.isBlank()) {
+            throw new IllegalStateException("DISTRIBUTION_REQUEST thiếu receiverCode: " + event.getEventId());
+        }
+
+        ExchangeTransactions transaction = exchangeTransactionsRepository.findById(event.getAggregateId())
+                .orElseThrow(() -> new IllegalStateException(
+                        "Không tìm thấy giao dịch cho outbox event: " + event.getEventId()));
+        Document document = documentRepository.findById(transaction.getDocumentId())
+                .orElseThrow(() -> new IllegalStateException(
+                        "Không tìm thấy văn bản cho outbox event: " + event.getEventId()));
+        Organization sender = registryService.getOrganizationById(transaction.getSenderOrgId());
+        Organization receiver = registryService.getOrganizationById(
+                registryService.getOrganizationIdByCode(receiverCode));
+
+        return RoutingRequest.builder()
+                .transactionCode(transaction.getTransactionCode())
+                .priority(transaction.getPriority())
+                .documentCode(document.getDocumentCode())
+                .title(document.getTitle())
+                .summary(document.getSummary())
+                .documentType(document.getDocumentType())
+                .extractedMetadata(document.getExtractedMetadata())
+                .storagePath(transaction.getCurrentStoragePath())
+                .versionNo(document.getCurrentVersion())
+                .senderCode(sender.getCode())
+                .senderName(sender.getName())
+                .receiverCode(receiver.getCode())
+                .receiverName(receiver.getName())
+                .receiveEndpoint(receiver.getReceiveEndpoint())
+                .build();
     }
 
     private void waitForPublisherConfirm(CorrelationData correlationData) {
