@@ -59,6 +59,19 @@ services:
     volumes:
       - minio_data:/data
 
+  backend:
+    image: trucvb-backend:latest
+    container_name: trucvanban-backend
+    env_file:
+      - .env
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+      - rabbitmq
+      - redis
+      - minio
+
 volumes:
   postgres_data:
   rabbitmq_data:

@@ -114,4 +114,17 @@ public class RegistryController {
                                 .data(data)
                                 .build());
         }
+
+        @GetMapping("/organizations/active")
+        @Operation(summary = "Lấy danh sách tổ chức đang hoạt động (ACTIVE)")
+        public ResponseEntity<ResponseData<List<ActiveOrganizationResponse>>> getActiveOrganizations() {
+
+                List<ActiveOrganizationResponse> data = registryService.getActiveOrganizations();
+
+                return ResponseEntity.ok(ResponseData.<List<ActiveOrganizationResponse>>builder()
+                                .success(true)
+                                .message("Lấy danh sách tổ chức thành công")
+                                .data(data)
+                                .build());
+        }
 }

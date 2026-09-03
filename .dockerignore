@@ -1,0 +1,16 @@
+.git
+.gitignore
+.idea
+.vscode
+.env
+.example.env
+target
+*.log
+/private_key.pem
+/public_key.pem
+/B_BTC_public_key.pem
+test.html
+README.md
+AGENTS.md
+business
+doc
