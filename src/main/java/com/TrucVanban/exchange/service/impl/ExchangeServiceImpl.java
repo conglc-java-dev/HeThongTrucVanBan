@@ -9,6 +9,7 @@ import com.TrucVanban.exchange.dto.request.send.SignatureRequest;
 import com.TrucVanban.exchange.dto.response.DocumentDetailResponse;
 import com.TrucVanban.exchange.dto.response.ExchangeDocumentResponse;
 import com.TrucVanban.exchange.dto.response.MultiSignatureResponse;
+import com.TrucVanban.exchange.dto.response.PendingMultiSignatureResponse;
 import com.TrucVanban.exchange.dto.response.ReceiveDocumentResponse;
 import com.TrucVanban.exchange.dto.response.RevokeDocumentResponse;
 import com.TrucVanban.exchange.dto.response.TransactionReceivedStatusResponse;
@@ -284,9 +285,16 @@ public class ExchangeServiceImpl implements ExchangeService {
     public ReceiveDocumentResponse ackDocument(ReceiveDocumentRequest request) {
         Long receiverId = registryService.getOrganizationIdByCode(request.getReceiverCode());
         ExchangeTransactions transaction = exchangeTransactionsRepository
-                .findByTransactionCodeAndCurrentStatus(request.getTransactionCode(), TransactionStatus.DELIVERED)
+                .findByTransactionCode(request.getTransactionCode())
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Không tìm thấy giao dịch đã được luân chuyển có code: " + request.getTransactionCode()));
+
+        if (transaction.getCurrentStatus() != TransactionStatus.ROUTED
+                && transaction.getCurrentStatus() != TransactionStatus.DISPATCHED
+                && transaction.getCurrentStatus() != TransactionStatus.DELIVERED) {
+            throw new BusinessLogicException("Giao dịch chưa được chuyển tới đơn vị nhận. Trạng thái hiện tại: "
+                    + transaction.getCurrentStatus());
+        }
 
         if (!receiverId.equals(transaction.getReceiverOrgId())) {
             throw new ForbiddenException("Bạn không có quyền ghi nhận văn bản này");
@@ -301,6 +309,9 @@ public class ExchangeServiceImpl implements ExchangeService {
         statusHistory.setTransactionId(transaction.getId());
         statusHistory.setActorOrgId(receiverId);
         statusHistoryRepository.save(statusHistory);
+
+        transaction.setCurrentStatus(TransactionStatus.DELIVERED);
+        exchangeTransactionsRepository.save(transaction);
 
         // Ghi audit log ACK
         auditLogService.log("ACK_RECEIVED", "ORGANIZATION", request.getReceiverCode(), "SUCCESS",
@@ -346,12 +357,74 @@ public class ExchangeServiceImpl implements ExchangeService {
                             .time(t.getCreatedAt())
                             .status(t.getCurrentStatus().name())
                             .build());
+                    Document document = documentRepository.findById(t.getDocumentId()).orElse(null);
+                    Organization sender = registryService.getOrganizationById(t.getSenderOrgId());
+                    String storagePath = t.getCurrentStoragePath();
+                    if (storagePath == null && document != null) {
+                        storagePath = documentVersionRepository.findTopByDocumentIdOrderByVersionNoDesc(document.getId())
+                                .map(DocumentVersion::getStoragePath).orElse(null);
+                    }
                     return TransactionReceivedStatusResponse.builder()
                             .transactionCode(t.getTransactionCode())
+                            .documentCode(document != null ? document.getDocumentCode() : null)
+                            .title(document != null ? document.getTitle() : null)
+                            .summary(document != null ? document.getSummary() : null)
+                            .documentType(document != null ? document.getDocumentType() : null)
+                            .storagePath(storagePath)
+                            .senderCode(sender != null ? sender.getCode() : null)
+                            .currentStatus(t.getCurrentStatus().name())
+                            .issuedDate(document != null ? document.getIssuedDate() : null)
+                            .extractedMetadata(document != null ? document.getExtractedMetadata() : null)
                             .timeline(timelines)
                             .build();
                 })
                 .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PendingMultiSignatureResponse getPendingMultiSignature(String masterTransactionCode, String receiverCode) {
+        ExchangeTransactions transaction = exchangeTransactionsRepository.findByMasterTransactionCode(masterTransactionCode)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy luồng ký nối: " + masterTransactionCode));
+
+        List<String> routingList = objectMapper.convertValue(transaction.getRoutingList(), List.class);
+        int currentStep = transaction.getCurrentStep() != null ? transaction.getCurrentStep() : 0;
+        String expectedReceiver = currentStep < routingList.size() ? routingList.get(currentStep) : null;
+        if (!Objects.equals(expectedReceiver, receiverCode)) {
+            throw new ForbiddenException("Văn bản chưa đến lượt cơ quan này ký");
+        }
+
+        Document document = documentRepository.findById(transaction.getDocumentId())
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy văn bản của luồng ký"));
+        List<SignatureRequest> existingSignatures = documentSignatureRepository
+                .findByTransactionIdOrderBySignatureOrderAsc(transaction.getId()).stream()
+                .map(signature -> SignatureRequest.builder()
+                        .signatureOrder(signature.getSignatureOrder())
+                        .signerCode(signature.getSignerCode())
+                        .signerRole(signature.getSignerRole())
+                        .signatureType(signature.getSignatureType())
+                        .certificateSerialNumber(signature.getCertificateSerial())
+                        .timestamp(signature.getSignedAt() != null ? signature.getSignedAt().toString() : "")
+                        .signatureValue(signature.getSignatureValue())
+                        .build())
+                .toList();
+
+        return PendingMultiSignatureResponse.builder()
+                .masterTransactionCode(transaction.getMasterTransactionCode())
+                .documentCode(document.getDocumentCode())
+                .title(document.getTitle())
+                .summary(document.getSummary())
+                .documentType(document.getDocumentType())
+                .issuedDate(document.getIssuedDate())
+                .extractedMetadata(document.getExtractedMetadata())
+                .storagePath(transaction.getCurrentStoragePath())
+                .priority(transaction.getPriority())
+                .currentStep(currentStep)
+                .currentReceiverCode(receiverCode)
+                .routingList(routingList)
+                .distributionList(objectMapper.convertValue(transaction.getDistributionList(), List.class))
+                .existingSignatures(existingSignatures)
+                .build();
     }
 
     @Override
