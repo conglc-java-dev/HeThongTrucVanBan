@@ -32,6 +32,7 @@ jobs:
         id: image
         run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
 
+      # Bật BuildKit — bắt buộc để dùng cache-from/cache-to
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -42,12 +43,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # cache-from: Lấy layer đã build từ lần trước trên GitHub Cache Registry
+      # cache-to:   Lưu layer mới build vào cache để lần sau dùng lại
+      # mode=max:   Cache tất cả các intermediate layer (không chỉ final image)
+      # → Khi pom.xml không đổi, bước `mvn package` bên trong Dockerfile
+      #   sẽ được lấy từ cache, tiết kiệm 2-5 phút build.
       - name: Build and push image
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           tags: ${{ steps.image.outputs.name }}:${{ github.event.workflow_run.head_sha }}
+          cache-from: type=registry,ref=${{ steps.image.outputs.name }}:cache
+          cache-to: type=registry,ref=${{ steps.image.outputs.name }}:cache,mode=max
 
   deploy:
     needs: build-and-push
@@ -76,4 +84,4 @@ jobs:
           ssh -i ~/.ssh/backend_deploy_key -p "$SERVER_PORT" "$SERVER_USER@$SERVER_HOST" \
             "cd /opt/backend && \
              BACKEND_IMAGE='$BACKEND_IMAGE' IMAGE_TAG='$IMAGE_TAG' docker compose pull backend && \
-             BACKEND_IMAGE='$BACKEND_IMAGE' IMAGE_TAG='$IMAGE_TAG' docker compose up -d --no-deps --wait --wait-timeout 180 backend"
+             BACKEND_IMAGE='$BACKEND_IMAGE' IMAGE_TAG='$IMAGE_TAG' docker compose up -d --wait --wait-timeout 180 backend"
