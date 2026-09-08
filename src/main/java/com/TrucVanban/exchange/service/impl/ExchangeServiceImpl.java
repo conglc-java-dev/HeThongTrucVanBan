@@ -283,7 +283,7 @@ public class ExchangeServiceImpl implements ExchangeService {
     @Override
     @Transactional
     public ReceiveDocumentResponse ackDocument(ReceiveDocumentRequest request) {
-        Long receiverId = registryService.getOrganizationIdByCode(request.getReceiverCode());
+
         ExchangeTransactions transaction = exchangeTransactionsRepository
                 .findByTransactionCode(request.getTransactionCode())
                 .orElseThrow(() -> new ResourceNotFoundException(

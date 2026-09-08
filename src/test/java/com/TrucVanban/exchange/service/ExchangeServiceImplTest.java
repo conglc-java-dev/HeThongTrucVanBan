@@ -53,9 +53,9 @@ import static org.mockito.Mockito.*;
  *    - replacedDoc có trạng thái không hợp lệ → BusinessLogicException + Redis rollback
  *
  * 2. ackDocument:
- *    - Transaction không ở trạng thái DELIVERED → ResourceNotFoundException
+ *    - Transaction chưa được chuyển tới đơn vị nhận → BusinessLogicException
  *    - Receiver không khớp với transaction → ForbiddenException
- *    - Happy path: lưu đúng DocumentReceiver và StatusHistory
+ *    - Happy path: lưu receiver, status history và cập nhật transaction thành DELIVERED
  *
  * 3. revokeDocument:
  *    - Document không tồn tại → ResourceNotFoundException
@@ -262,23 +262,27 @@ class ExchangeServiceImplTest {
     class AckDocumentTests {
 
         @Test
-        @DisplayName("Thất bại: Transaction không ở trạng thái DELIVERED → ResourceNotFoundException")
+        @DisplayName("Thất bại: Transaction chưa được chuyển tới đơn vị nhận → BusinessLogicException")
         void ackDocument_TransactionNotDelivered_ShouldThrow() {
             // ARRANGE
             ReceiveDocumentRequest request = new ReceiveDocumentRequest();
             request.setTransactionCode("TXN-001");
             request.setReceiverCode("AGENCY-B");
 
-            when(exchangeTransactionsRepository.findByTransactionCodeAndCurrentStatus(
-                    "TXN-001", TransactionStatus.DELIVERED))
-                    .thenReturn(Optional.empty());
+            ExchangeTransactions transaction = ExchangeTransactions.builder()
+                    .transactionCode("TXN-001")
+                    .currentStatus(TransactionStatus.RECEIVED)
+                    .build();
+            when(exchangeTransactionsRepository.findByTransactionCode("TXN-001"))
+                    .thenReturn(Optional.of(transaction));
 
             // ACT & ASSERT
             assertThatThrownBy(() -> exchangeService.ackDocument(request))
-                    .isInstanceOf(ResourceNotFoundException.class)
-                    .hasMessageContaining("TXN-001");
+                    .isInstanceOf(BusinessLogicException.class)
+                    .hasMessageContaining("Trạng thái hiện tại: RECEIVED");
 
             verifyNoInteractions(registryService);
+            verify(exchangeTransactionsRepository, never()).save(any());
         }
 
         @Test
@@ -298,8 +302,7 @@ class ExchangeServiceImplTest {
                     .receiverOrgId(20L)
                     .currentStatus(TransactionStatus.DELIVERED)
                     .build();
-            when(exchangeTransactionsRepository.findByTransactionCodeAndCurrentStatus(
-                    "TXN-001", TransactionStatus.DELIVERED))
+            when(exchangeTransactionsRepository.findByTransactionCode("TXN-001"))
                     .thenReturn(Optional.of(transaction));
 
             // ACT & ASSERT
@@ -307,8 +310,8 @@ class ExchangeServiceImplTest {
                     .isInstanceOf(ForbiddenException.class)
                     .hasMessageContaining("quyền ghi nhận");
 
-            verify(exchangeTransactionsRepository).findByTransactionCodeAndCurrentStatus(
-                    "TXN-001", TransactionStatus.DELIVERED);
+            verify(exchangeTransactionsRepository).findByTransactionCode("TXN-001");
+            verify(exchangeTransactionsRepository, never()).save(any());
         }
 
         @Test
@@ -326,10 +329,9 @@ class ExchangeServiceImplTest {
                     .transactionCode("TXN-001")
                     .documentId(100L)
                     .receiverOrgId(20L)
-                    .currentStatus(TransactionStatus.DELIVERED)
+                    .currentStatus(TransactionStatus.DISPATCHED)
                     .build();
-            when(exchangeTransactionsRepository.findByTransactionCodeAndCurrentStatus(
-                    "TXN-001", TransactionStatus.DELIVERED))
+            when(exchangeTransactionsRepository.findByTransactionCode("TXN-001"))
                     .thenReturn(Optional.of(transaction));
 
             // Mock mapper trả về object giả (chưa có ID)
@@ -344,8 +346,7 @@ class ExchangeServiceImplTest {
             // ASSERT — response đúng
             assertThat(response).isNotNull();
             assertThat(response.getTransactionCode()).isEqualTo("TXN-001");
-            verify(exchangeTransactionsRepository).findByTransactionCodeAndCurrentStatus(
-                    "TXN-001", TransactionStatus.DELIVERED);
+            verify(exchangeTransactionsRepository).findByTransactionCode("TXN-001");
 
             // Service phải set documentId và receiverOrgId trước khi save
             ArgumentCaptor<DocumentReceiver> receiverCaptor = ArgumentCaptor.forClass(DocumentReceiver.class);
@@ -358,6 +359,11 @@ class ExchangeServiceImplTest {
             verify(statusHistoryRepository).save(historyCaptor.capture());
             assertThat(historyCaptor.getValue().getTransactionId()).isEqualTo(5L);
             assertThat(historyCaptor.getValue().getActorOrgId()).isEqualTo(20L);
+
+            ArgumentCaptor<ExchangeTransactions> transactionCaptor =
+                    ArgumentCaptor.forClass(ExchangeTransactions.class);
+            verify(exchangeTransactionsRepository).save(transactionCaptor.capture());
+            assertThat(transactionCaptor.getValue().getCurrentStatus()).isEqualTo(TransactionStatus.DELIVERED);
         }
     }
 
