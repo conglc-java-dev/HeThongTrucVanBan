@@ -269,7 +269,6 @@ class ExchangeServiceImplTest {
             request.setTransactionCode("TXN-001");
             request.setReceiverCode("AGENCY-B");
 
-            when(registryService.getOrganizationIdByCode("AGENCY-B")).thenReturn(20L);
             when(exchangeTransactionsRepository.findByTransactionCodeAndCurrentStatus(
                     "TXN-001", TransactionStatus.DELIVERED))
                     .thenReturn(Optional.empty());
@@ -278,6 +277,8 @@ class ExchangeServiceImplTest {
             assertThatThrownBy(() -> exchangeService.ackDocument(request))
                     .isInstanceOf(ResourceNotFoundException.class)
                     .hasMessageContaining("TXN-001");
+
+            verifyNoInteractions(registryService);
         }
 
         @Test
@@ -305,6 +306,9 @@ class ExchangeServiceImplTest {
             assertThatThrownBy(() -> exchangeService.ackDocument(request))
                     .isInstanceOf(ForbiddenException.class)
                     .hasMessageContaining("quyền ghi nhận");
+
+            verify(exchangeTransactionsRepository).findByTransactionCodeAndCurrentStatus(
+                    "TXN-001", TransactionStatus.DELIVERED);
         }
 
         @Test
@@ -340,6 +344,8 @@ class ExchangeServiceImplTest {
             // ASSERT — response đúng
             assertThat(response).isNotNull();
             assertThat(response.getTransactionCode()).isEqualTo("TXN-001");
+            verify(exchangeTransactionsRepository).findByTransactionCodeAndCurrentStatus(
+                    "TXN-001", TransactionStatus.DELIVERED);
 
             // Service phải set documentId và receiverOrgId trước khi save
             ArgumentCaptor<DocumentReceiver> receiverCaptor = ArgumentCaptor.forClass(DocumentReceiver.class);
