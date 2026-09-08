@@ -283,7 +283,7 @@ public class ExchangeServiceImpl implements ExchangeService {
     @Override
     @Transactional
     public ReceiveDocumentResponse ackDocument(ReceiveDocumentRequest request) {
-        Long receiverId = registryService.getOrganizationIdByCode(request.getReceiverCode());
+
         ExchangeTransactions transaction = exchangeTransactionsRepository
                 .findByTransactionCode(request.getTransactionCode())
                 .orElseThrow(() -> new ResourceNotFoundException(
@@ -296,6 +296,7 @@ public class ExchangeServiceImpl implements ExchangeService {
                     + transaction.getCurrentStatus());
         }
 
+        Long receiverId = registryService.getOrganizationIdByCode(request.getReceiverCode());
         if (!receiverId.equals(transaction.getReceiverOrgId())) {
             throw new ForbiddenException("Bạn không có quyền ghi nhận văn bản này");
         }

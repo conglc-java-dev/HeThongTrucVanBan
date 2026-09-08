@@ -34,6 +34,7 @@ spring:
     redis:
       host: ${REDIS_HOST}
       port: ${REDIS_PORT}
+      password: ${REDIS_PASSWORD:}
       timeout: 5000ms
 jwt:
   secret: ${JWT_SECRET}
@@ -41,8 +42,20 @@ jwt:
   refresh-token-expiration: 604800 # 7 days
 
 server:
+  forward-headers-strategy: framework
   servlet:
     context-path: /api/v1
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
 
 minio:
   endpoint: ${MINIO_ENDPOINT}
