@@ -14,10 +14,13 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
+
     steps:
       - name: Check out source
         uses: actions/checkout@v4
 
+      # setup-java tự cache ~/.m2 dựa theo hash pom.xml.
+      # Nếu pom.xml không đổi → bỏ qua toàn bộ bước download thư viện.
       - name: Set up Java 21
         uses: actions/setup-java@v4
         with:
@@ -25,5 +28,21 @@ jobs:
           java-version: "21"
           cache: maven
 
-      - name: Compile and run tests
-        run: ./mvnw --batch-mode clean verify
+      # --no-transfer-progress: Tắt progress bar khi download → log gọn hơn
+      # -T 1C: Build song song với số thread = số CPU core → nhanh hơn trên máy nhiều core
+      - name: Compile source
+        run: ./mvnw --batch-mode --no-transfer-progress -T 1C compile
+
+      # Tách bước test riêng để GitHub Actions hiển thị đúng bước nào fail
+      - name: Run unit tests
+        run: ./mvnw --batch-mode --no-transfer-progress test
+
+      # Upload báo cáo test (XML Surefire) lên GitHub khi pipeline fail.
+      # Giúp xem chi tiết test nào fail ngay trên UI mà không cần pull log về.
+      - name: Upload test report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: target/surefire-reports/
+          retention-days: 7
