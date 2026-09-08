@@ -1,5 +1,6 @@
 package com.TrucVanban.exchange.dto.request.send;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
@@ -32,6 +33,7 @@ public class SignAndBuildRequest {
     private String title;
     private String documentType;
     private String summary;
+    private JsonNode extractedMetadata;
 
     /**
      * Ngày/thời gian phát hành văn bản (dd-MM-yyyy, ISO 8601 hoặc YYYY-MM-DD).

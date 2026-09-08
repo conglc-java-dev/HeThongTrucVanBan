@@ -131,6 +131,7 @@ public class ClientSimulatorServiceImpl implements ClientSimulatorService {
         internalRequest.setTitle(request.getTitle());
         internalRequest.setDocumentType(request.getDocumentType());
         internalRequest.setSummary(request.getSummary());
+        internalRequest.setExtractedMetadata(request.getExtractedMetadata());
         internalRequest.setIssuedDate(request.getIssuedDate());
 
         String currentTimestamp = ZonedDateTime.now(ZoneId.of("Asia/Ho_Chi_Minh"))

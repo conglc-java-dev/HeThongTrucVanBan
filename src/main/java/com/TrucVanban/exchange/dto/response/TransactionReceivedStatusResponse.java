@@ -1,5 +1,6 @@
 package com.TrucVanban.exchange.dto.response;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import lombok.Builder;
 import lombok.Data;
 
@@ -10,6 +11,15 @@ import java.util.List;
 @Builder
 public class TransactionReceivedStatusResponse {
     private String transactionCode;
+    private String documentCode;
+    private String title;
+    private String summary;
+    private String documentType;
+    private String storagePath;
+    private String senderCode;
+    private String currentStatus;
+    private String issuedDate;
+    private JsonNode extractedMetadata;
     private List<timeline> timeline;
 
     @Data

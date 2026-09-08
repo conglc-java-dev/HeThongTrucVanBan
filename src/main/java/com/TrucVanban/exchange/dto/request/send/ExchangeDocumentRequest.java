@@ -1,8 +1,6 @@
 package com.TrucVanban.exchange.dto.request.send;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Pattern;
@@ -12,8 +10,6 @@ import java.util.List;
 
 @Data
 public class ExchangeDocumentRequest {
-
-    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     @NotBlank(message = "Mã tổ chức gửi (senderCode) là bắt buộc")
     private String senderCode;
@@ -55,16 +51,4 @@ public class ExchangeDocumentRequest {
     )
     private String issuedDate;
 
-    @SuppressWarnings("unused")
-    public void setExtractedMetadata(String extractedMetadataStr) throws JsonProcessingException {
-        if (extractedMetadataStr != null && !extractedMetadataStr.isBlank()) {
-            this.extractedMetadata = MAPPER.readTree(extractedMetadataStr);
-        } else {
-            this.extractedMetadata = null;
-        }
-    }
-    @SuppressWarnings("unused")
-    public void setExtractedMetadata(JsonNode extractedMetadata) {
-        this.extractedMetadata = extractedMetadata;
-    }
 }

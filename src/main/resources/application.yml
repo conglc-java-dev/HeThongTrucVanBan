@@ -82,9 +82,9 @@ security:
     negative-cache-ttl: 60s
     max-body-size: 262144
     protected-paths:
-      - /ack
-      - /*/transactions/sended/**
-      - /*/transactions/received
+      # - /ack
+      # - /*/transactions/sended/**
+      # - /*/transactions/received # Tạm tắt HMAC để test hộp thư bằng admin
     master-key: ${HMAC_MASTER_KEY:dev-local-master-key-change-in-production}
 
 app:

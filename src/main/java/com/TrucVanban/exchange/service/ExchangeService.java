@@ -8,6 +8,7 @@ import com.TrucVanban.exchange.dto.request.send.MultiSignatureRequest;
 import com.TrucVanban.exchange.dto.response.DocumentDetailResponse;
 import com.TrucVanban.exchange.dto.response.ExchangeDocumentResponse;
 import com.TrucVanban.exchange.dto.response.MultiSignatureResponse;
+import com.TrucVanban.exchange.dto.response.PendingMultiSignatureResponse;
 import com.TrucVanban.exchange.dto.response.ReceiveDocumentResponse;
 import com.TrucVanban.exchange.dto.response.RevokeDocumentResponse;
 import com.TrucVanban.exchange.dto.response.TransactionReceivedStatusResponse;
@@ -24,4 +25,5 @@ public interface ExchangeService {
     DocumentDetailResponse getDocumentDetail(String documentCode);
     void updateDocument(String documentCode, UpdateDocumentRequest request);
     MultiSignatureResponse processMultiSignatureDocument(MultiSignatureRequest request, String idempotencyKey);
+    PendingMultiSignatureResponse getPendingMultiSignature(String masterTransactionCode, String receiverCode);
 }
