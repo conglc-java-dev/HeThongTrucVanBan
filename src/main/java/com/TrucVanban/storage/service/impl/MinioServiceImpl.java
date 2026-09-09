@@ -24,6 +24,8 @@ public class MinioServiceImpl implements MinioService {
 
     @Value("${minio.bucket-name}")
     private String bucketName;
+    @Value("${minio.public-endpoint:}")
+    private String minioPublicEndpoint;
 
     @Override
     public String upload(MultipartFile file) {
@@ -46,12 +48,27 @@ public class MinioServiceImpl implements MinioService {
     @Override
     public String getPresignedUrl(String objectName) {
         try {
-            return minioClient.getPresignedObjectUrl(GetPresignedObjectUrlArgs.builder()
+            String url = minioClient.getPresignedObjectUrl(GetPresignedObjectUrlArgs.builder()
                     .bucket(bucketName)
                     .object(objectName)
                     .method(Method.GET)
                     .build());
-        } catch (MinioException | IOException | InvalidKeyException | NoSuchAlgorithmException e) {
+
+            if (minioPublicEndpoint != null && !minioPublicEndpoint.isBlank()) {
+                java.net.URI originalUri = java.net.URI.create(url);
+                java.net.URI publicUri = java.net.URI.create(minioPublicEndpoint);
+
+                return new java.net.URI(
+                        publicUri.getScheme(),
+                        originalUri.getRawAuthority() != null ? publicUri.getAuthority() : null,
+                        originalUri.getPath(),
+                        originalUri.getRawQuery(),
+                        originalUri.getRawFragment()).toString();
+            }
+
+            return url;
+        } catch (MinioException | IOException | InvalidKeyException | NoSuchAlgorithmException
+                | java.net.URISyntaxException e) {
             throw new RuntimeException("Không thể lấy URL file: " + e.getMessage(), e);
         }
     }
@@ -85,7 +102,8 @@ public class MinioServiceImpl implements MinioService {
         }
     }
 
-    private void ensureBucketExists() throws MinioException, IOException, InvalidKeyException, NoSuchAlgorithmException {
+    private void ensureBucketExists()
+            throws MinioException, IOException, InvalidKeyException, NoSuchAlgorithmException {
         boolean exists = minioClient.bucketExists(BucketExistsArgs.builder().bucket(bucketName).build());
         if (!exists) {
             minioClient.makeBucket(MakeBucketArgs.builder().bucket(bucketName).build());
