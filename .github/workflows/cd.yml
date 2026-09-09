@@ -30,7 +30,7 @@ jobs:
 
       - name: Set image name
         id: image
-        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+        run: echo "name=ghcr.io/conglc-java-dev/hethongtrucvanban" >> "$GITHUB_OUTPUT"
 
       # Bật BuildKit — bắt buộc để dùng cache-from/cache-to
       - name: Set up Docker Buildx
