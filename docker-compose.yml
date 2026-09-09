@@ -1,4 +1,5 @@
 services:
+
   nginx:
     image: nginx:1.27-alpine
     restart: unless-stopped
@@ -12,26 +13,35 @@ services:
     networks:
       - public
 
+
   backend:
-    image: "${BACKEND_IMAGE:-trucvanban-backend}:latest"
+    image: ghcr.io/conglc-java-dev/hethongtrucvanban:latest
     restart: unless-stopped
+
     env_file:
       - .env
+
     environment:
       DB_URL: "jdbc:postgresql://postgres:5432/${POSTGRES_DB}"
       DB_USERNAME: "${POSTGRES_USER}"
       DB_PASSWORD: "${POSTGRES_PASSWORD}"
+
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: "${REDIS_PASSWORD}"
+
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
       RABBITMQ_USERNAME: "${RABBITMQ_USERNAME}"
       RABBITMQ_PASSWORD: "${RABBITMQ_PASSWORD}"
+
       MINIO_ENDPOINT: http://minio:9000
+
       VISUAL_SIGNATURE_ALLOW_INSECURE_SSL: "false"
+
     expose:
       - "8080"
+
     depends_on:
       postgres:
         condition: service_healthy
@@ -41,86 +51,178 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--spider", "http://localhost:8080/api/v1/actuator/health"]
+      test:
+        [
+          "CMD",
+          "wget",
+          "--quiet",
+          "--spider",
+          "http://localhost:8080/api/v1/actuator/health"
+        ]
       interval: 10s
       timeout: 5s
       retries: 12
       start_period: 30s
+
     networks:
       - public
       - internal
 
+
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+
+    # Chỉ expose trên localhost của SERVER.
+    # Không public trực tiếp ra Internet.
+    ports:
+      - "127.0.0.1:15432:5432"
+
     environment:
       POSTGRES_DB: "${POSTGRES_DB}"
       POSTGRES_USER: "${POSTGRES_USER}"
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+
     volumes:
       - postgres_data:/var/lib/postgresql/data
+
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
+
     networks:
       - internal
+
 
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
+
+    # Chỉ localhost server.
+    # Không public Redis ra Internet.
+    ports:
+      - "127.0.0.1:16379:6379"
+
+    command:
+      [
+        "redis-server",
+        "--appendonly",
+        "yes",
+        "--requirepass",
+        "${REDIS_PASSWORD}"
+      ]
+
     environment:
       REDIS_PASSWORD: "${REDIS_PASSWORD}"
+
     volumes:
       - redis_data:/data
+
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$$REDIS_PASSWORD\" ping | grep PONG"]
+      test:
+        [
+          "CMD-SHELL",
+          "redis-cli --no-auth-warning -a \"$$REDIS_PASSWORD\" ping | grep PONG"
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
+
     networks:
       - internal
+
 
   rabbitmq:
     image: rabbitmq:3.13-management-alpine
     restart: unless-stopped
+
+    # Chỉ mở Management UI trên localhost server.
+    ports:
+      - "127.0.0.1:15672:15672"
+
     environment:
       RABBITMQ_DEFAULT_USER: "${RABBITMQ_USERNAME}"
       RABBITMQ_DEFAULT_PASS: "${RABBITMQ_PASSWORD}"
+
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
+
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      test:
+        [
+          "CMD",
+          "rabbitmq-diagnostics",
+          "-q",
+          "ping"
+        ]
       interval: 10s
       timeout: 5s
       retries: 10
+
     networks:
       - internal
+
 
   minio:
     image: minio/minio:RELEASE.2025-04-22T22-12-26Z
     restart: unless-stopped
-    command: server /data --console-address ":9001"
+
+    # MinIO API
+    # Chỉ localhost server.
+    #
+    # MinIO Console
+    # Chỉ localhost server.
+    ports:
+      - "127.0.0.1:19000:9000"
+      - "127.0.0.1:19001:9001"
+
+    command:
+      server /data --console-address ":9001"
+
     environment:
       MINIO_ROOT_USER: "${MINIO_ACCESS_KEY}"
       MINIO_ROOT_PASSWORD: "${MINIO_SECRET_KEY}"
+
     volumes:
       - minio_data:/data
+
     healthcheck:
-      test: ["CMD", "curl", "--fail", "http://localhost:9000/minio/health/live"]
+      test:
+        [
+          "CMD",
+          "curl",
+          "--fail",
+          "http://localhost:9000/minio/health/live"
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
+
     networks:
       - internal
 
+
 networks:
+
+  # Nginx <-> Backend
   public:
+
+
+  # Backend <-> PostgreSQL/Redis/RabbitMQ/MinIO
+  #
+  # internal: true nghĩa là network này không được
+  # kết nối trực tiếp ra bên ngoài.
   internal:
-    internal: true
+    internal: false
+
 
 volumes:
   postgres_data:
