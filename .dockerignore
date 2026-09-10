@@ -13,7 +13,3 @@ business
 docs
 test.html
 backend-ci-cd-agent-instructions.md
-private_key.pem
-public_key.pem
-B_BTC_public_key.pem
-src/main/resources/keys/*private_key.pem
