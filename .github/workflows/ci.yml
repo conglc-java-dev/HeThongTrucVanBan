@@ -33,16 +33,37 @@ jobs:
       - name: Compile source
         run: ./mvnw --batch-mode --no-transfer-progress -T 1C compile
 
+      # Cache Docker image layers cho Testcontainers.
+      # 3 image được dùng trong IT: postgres:16-alpine, redis:7-alpine, rabbitmq:3.13-management-alpine
+      # Mỗi lần CI chạy, nếu image chưa đổi → runner dùng lại layer từ cache thay vì kéo từ DockerHub.
+      # Key cố định theo tên image → chỉ invalidate khi bạn nâng version image trong BaseIT.java.
+      - name: Cache Testcontainers Docker images
+        uses: actions/cache@v4
+        with:
+          path: /var/lib/docker
+          key: docker-images-tc-${{ runner.os }}-postgres16-redis7-rabbitmq313
+          restore-keys: |
+            docker-images-tc-${{ runner.os }}-
+
       # Tách bước test riêng để GitHub Actions hiển thị đúng bước nào fail
       - name: Run unit tests
         run: ./mvnw --batch-mode --no-transfer-progress test
 
-      # Upload báo cáo test (XML Surefire) lên GitHub khi pipeline fail.
+      # Integration Test: dùng maven-failsafe-plugin để tách riêng khỏi unit test.
+      # Chạy sau khi unit test đã pass (fail-fast: unit fail → không tốn thời gian bật container).
+      # GitHub Actions ubuntu-latest có sẵn Docker daemon → Testcontainers hoạt động ngay.
+      # Các container Testcontainers tự bật/tắt trong JVM, không cần khai báo service container.
+      - name: Run integration tests
+        run: ./mvnw --batch-mode --no-transfer-progress failsafe:integration-test failsafe:verify
+
+      # Upload báo cáo test khi pipeline fail (cả unit test lẫn integration test).
       # Giúp xem chi tiết test nào fail ngay trên UI mà không cần pull log về.
-      - name: Upload test report on failure
+      - name: Upload test reports on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: surefire-reports
-          path: target/surefire-reports/
+          name: test-reports
+          path: |
+            target/surefire-reports/
+            target/failsafe-reports/
           retention-days: 7

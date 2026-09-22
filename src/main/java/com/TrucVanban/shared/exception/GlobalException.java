@@ -84,6 +84,16 @@ public class GlobalException {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
     }
 
+    @ExceptionHandler(value = org.springframework.web.bind.MissingRequestHeaderException.class)
+    public ResponseEntity<?> handleMissingRequestHeader(org.springframework.web.bind.MissingRequestHeaderException e) {
+        ResponseData<Void> response = ResponseData.<Void>builder()
+                .message(String.format("Header '%s' là bắt buộc.", e.getHeaderName()))
+                .data(null)
+                .build();
+        log.error("RESPONSE: {} - {}", response, e.getMessage());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+    }
+
     @ExceptionHandler(value = HttpMessageNotReadableException.class)
     public ResponseEntity<?> handleInvalidInput(HttpMessageNotReadableException ex) {
         ResponseData<Void> response = ResponseData.<Void>builder()
