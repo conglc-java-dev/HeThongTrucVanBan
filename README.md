@@ -1,282 +1,316 @@
 # TrucVanban
 
-TrucVanban is a Spring Boot-based document exchange platform for inter-agency document circulation. It manages organization registration, certificates, SLA configurations, document intake, routing, acknowledgment, status tracking, and file storage.
+TrucVanban is a middleware platform for exchanging electronic documents between organizations. It accepts documents through an API, persists business state and file references, and coordinates asynchronous delivery through RabbitMQ.
 
-## Documentation Sources
+The project focuses on more than document CRUD. Its core concern is **reliable messaging**: preserving requests after the database commits, tolerating temporary receiver failures, controlling duplicate messages, and providing an operational trail when a message cannot be processed automatically.
 
-This README was prepared from the project codebase and the supporting business documents in `business/`, including:
+## Architecture Goals
 
-- `business/TÀI LIỆU ĐẶC TẢ API.docx`
-- `business/Tài liệu Đặc tả Use Case.docx`
-- `business/Architecture_Overview.drawio.png`
-- `business/coreflow.drawio.png`
-- `business/ERD.png`
-
-## Business Domain
-
-The system acts as a central broker for exchanging official documents between registered organizations.
-
-### Core capabilities
-
-- Register and manage organizations participating in the platform
-- Store and rotate organization certificates
-- Configure SLA rules by document priority
-- Accept incoming exchange requests with file upload
-- Persist document metadata and version history
-- Route documents to receiver organizations through RabbitMQ
-- Forward document payloads to partner endpoints with an outbound API key
-- Record acknowledgment statuses from receivers
-- Track transaction timelines and business statuses
-
-### Main business flow
-
-1. A sender organization submits a document exchange request.
-2. The system validates the sender and receiver organizations.
-3. The document metadata is stored in the database.
-4. The uploaded file is stored in MinIO as a document version.
-5. A transaction is created for each receiver.
-6. A routing message is published to RabbitMQ after the database transaction commits.
-7. The routing consumer retrieves the message and dispatches the file to the receiver endpoint.
-8. The receiver returns acknowledgement data, which is stored as receiver status and status history.
-9. Clients can query sent and received transaction status.
+- Decouple the inbound HTTP request lifecycle from delivery to external systems.
+- Preserve delivery intent with the Transactional Outbox pattern instead of publishing directly to RabbitMQ inside the request transaction.
+- Embrace `at-least-once` delivery and design consumers to be idempotent.
+- Retry with delays without hot requeue loops or blocked worker threads.
+- Isolate failed messages in a DLQ instead of allowing them to block the main queue.
+- Track transaction state, business history, and failed messages in PostgreSQL.
 
 ## System Architecture
 
-The application follows a layered Spring Boot architecture.
-
-![System Architecture](business/Architecture_Overview.drawio.png)
-
 ```mermaid
 flowchart LR
-  Client[API Clients / Partner Systems] --> API[REST Controllers]
-  API --> Service[Application Services]
-  Service --> Repo[Spring Data Repositories]
-  Service --> Storage[MinIO]
-  Service --> MQ[RabbitMQ]
-  MQ --> Consumer[Routing Consumer]
-  Consumer --> Dispatch[Routing Service]
-  Dispatch --> Partner[Receiver Organization Endpoint]
-  Repo --> DB[(PostgreSQL)]
-  Dispatch --> Storage
-  Service --> Registry[Registry Module]
-  Service --> Exchange[Exchange Module]
-  Service --> Routing[Routing Module]
-  Service --> Shared[Shared Components]
+    Sender[Sender System] -->|REST + Idempotency-Key| API[Exchange API]
+    API --> Service[Exchange Service]
+
+    subgraph Data[Transactional Data Plane]
+        DB[(PostgreSQL)]
+        Outbox[(outbox_event)]
+        Object[(MinIO)]
+        Redis[(Redis)]
+    end
+
+    Service -->|metadata and transaction| DB
+    Service -->|same DB transaction| Outbox
+    Service -->|idempotency claim| Redis
+    Service -->|storage path and checksum| Object
+
+    Publisher[Outbox Publisher] -->|poll + lock| Outbox
+    Publisher -->|publisher confirm| Rabbit[RabbitMQ]
+    Rabbit --> Consumer[Routing Consumer]
+    Consumer -->|load file| Object
+    Consumer -->|idempotency claim| Redis
+    Consumer -->|multipart HTTP| Receiver[Receiver System]
+    Consumer -->|set DISPATCHED| DB
+    Rabbit --> Retry[Retry Queues / DLX / DLQ]
+    Retry --> Rabbit
+    Retry --> Failed[(failed_messages)]
 ```
 
-### Architecture layers
+### Component Responsibilities
 
-- `controller`: Exposes REST endpoints and returns the standard response wrapper.
-- `service`: Holds business logic for registry, exchange, routing, and storage operations.
-- `repository`: Provides data access to PostgreSQL via Spring Data JPA.
-- `entity`: Represents the persistence model.
-- `mapper`: Converts between entities and DTOs.
-- `consumer`: Handles asynchronous routing messages from RabbitMQ.
-- `shared`: Contains common configuration, authentication, utilities, exceptions, and response models.
+| Component | Responsibility |
+| --- | --- |
+| Exchange API | Validates input, signatures, and `Idempotency-Key`; creates documents and transactions |
+| PostgreSQL | Source of truth for business state, outbox events, audit records, and failed messages |
+| MinIO | Stores file content; messages contain only metadata and storage paths |
+| Outbox Publisher | Reads pending events, publishes them to RabbitMQ, and waits for broker confirms |
+| RabbitMQ | Buffers load, routes messages, and decouples producers from document delivery |
+| Routing Consumer | Downloads files, calls receiver endpoints, and decides whether to ACK or NACK |
+| Redis | Stores short-lived idempotency claims for the API and routing consumer |
+| DLX/DLQ | Coordinates retries and isolates messages that cannot recover automatically |
 
-### External infrastructure
+## Document Delivery Flow
 
-- PostgreSQL for transactional persistence
-- RabbitMQ for asynchronous document routing
-- MinIO for document file storage
-- Redis for cache/session-related infrastructure
-
-## ERD
-
-The ERD below reflects the database structure defined in the Flyway migrations.
-
-![ERD](business/ERD.png)
+### 1. Accept the Request and Write the Outbox Event
 
 ```mermaid
-erDiagram
-    organizations ||--o{ certificates : has
-    organizations ||--o{ documents : sends
-    organizations ||--o{ document_receivers : receives
-    organizations ||--o{ exchange_transactions : sender
-    organizations ||--o{ exchange_transactions : receiver
-    organizations ||--o{ status_histories : acts_as
-    organizations ||--o{ document_actions : requests
-    organizations ||--o{ document_actions : targets
-    organizations ||--o{ document_action_receivers : responds
+sequenceDiagram
+    autonumber
+    participant S as Sender System
+    participant A as Exchange API
+    participant R as Redis
+    participant D as PostgreSQL
+    participant O as outbox_event
 
-    documents ||--o{ document_versions : has
-    documents ||--o{ document_receivers : tracked_by
-    documents ||--o{ exchange_transactions : exchanged_as
-    documents ||--o{ document_actions : actioned_by
-    documents ||--o{ document_replacements : replaced_by
-    documents ||--o{ document_replacements : replaces
-    documents ||--o{ audit_logs : audited_in
-
-    exchange_transactions ||--o{ status_histories : timeline
-    exchange_transactions ||--o{ document_actions : drives
-    exchange_transactions ||--o{ retry_jobs : retried_by
-    exchange_transactions ||--o{ audit_logs : logged_in
-
-    document_actions ||--o{ document_action_receivers : has_recipients
-
-    sla_configurations {
-        bigint id
-        int document_priority
-        int max_receive_hours
-        string status
-        timestamp created_at
-        timestamp updated_at
-    }
-
-    system_config {
-        bigint id
-        string system_code
-        string inbound_api_key
-        string outbound_api_key
-        timestamp created_at
-        timestamp updated_at
-    }
+    S->>A: POST /exchange + Idempotency-Key
+    A->>R: SET NX claim (10-minute TTL)
+    A->>D: BEGIN
+    A->>D: Save document, version, and transactions
+    A->>O: Save ROUTING_REQUEST
+    A->>D: COMMIT
+    A->>R: Mark COMPLETED after commit
+    A-->>S: transactionCode + VALIDATED
 ```
 
-### Data model summary
+`ExchangeTransactions` and `OutboxEvent` are written in the same database transaction. As a result:
 
-- `organizations`: Registered agencies or partners using the platform.
-- `certificates`: Public certificate data for organizations.
-- `sla_configurations`: SLA rules by document priority.
-- `documents`: Logical document records and metadata.
-- `document_versions`: File storage versions and checksums.
-- `document_receivers`: Receiver-specific business status records.
-- `exchange_transactions`: Per-receiver transaction records for routing.
-- `status_histories`: Timeline of receiver/business status changes.
-- `document_actions`: Recall or replace workflows.
-- `document_action_receivers`: Receiver responses for document actions.
-- `document_replacements`: Links replacement documents to originals.
-- `retry_jobs`: Retry tracking for failed dispatch attempts.
-- `notification_logs`: Notification events such as DLQ or SLA alerts.
-- `audit_logs`: System-level audit trail.
-- `system_config`: Internal API key configuration for partner communication.
+- If the transaction rolls back, the event does not exist.
+- If the transaction commits, the delivery intent remains durable in PostgreSQL even when RabbitMQ is temporarily unavailable.
+- The API does not need to keep the connection open until the receiver finishes processing the document.
 
-## Main Modules
+### 2. Publish Outbox Events to RabbitMQ
 
-### Registry Module
+The scheduler runs according to `outbox.publisher.fixed-delay-ms`, which defaults to five seconds:
 
-Responsible for organization and compliance data.
+1. Select up to 50 due `NEW` events using `FOR UPDATE SKIP LOCKED`.
+2. Convert each payload into a `RoutingRequest`.
+3. Publish it to `document.exchange` with the `document.exchange` routing key.
+4. Wait up to five seconds for a correlated publisher confirm and check for a returned message.
+5. When the broker ACKs the publish, mark the event as `PROCESSED` and the transaction as `ROUTED`.
+6. If publishing fails, schedule another attempt after 5, 15, and 30 minutes; mark the event as `FAILED` after all attempts are exhausted.
 
-Available operations:
+`SKIP LOCKED` allows multiple publisher instances to operate without selecting the same batch concurrently. A publisher confirm proves that the broker accepted the message, but it does not provide exactly-once delivery: the process can still terminate after the broker ACK and before the database transaction commits. A later poll may publish the same event again, so the consumer must tolerate duplicates.
 
-- Register organization
-- Suspend organization
-- Update organization endpoint
-- Update organization certificate
-- Get organization detail
-- Update SLA configuration
+## RabbitMQ Design
 
-### Exchange Module
+### Topology
 
-Responsible for document intake and transaction tracking.
+| Type | Name | Purpose |
+| --- | --- | --- |
+| Topic exchange | `document.exchange` | Entry point for routing messages |
+| Main queue | `document.exchange.queue` | Work queue consumed by `RoutingConsumer` |
+| Direct DLX | `document.dlx` | Receives messages rejected by the main queue consumer |
+| DLX queue | `document.dlx.queue` | Consumed by `DlxConsumer`, which selects a retry stage or terminates processing |
+| Direct exchange | `document.retry.exchange` | Routes messages to the appropriate retry stage |
+| Retry queue | `document.retry.queue.1` | 10-second delay |
+| Retry queue | `document.retry.queue.2` | 60-second delay |
+| Retry queue | `document.retry.queue.3` | 5-minute delay |
+| Final queue | `document.dlq` | Retains messages that failed after all retry attempts |
 
-Available operations:
+All queues are durable. The main queue dead-letters to `document.dlx`; each retry queue has its own TTL and dead-letters back to the main exchange when that TTL expires.
 
-- Submit exchange request with multipart document upload
-- Receive acknowledgment from partner organization
-- Query sent transaction status
-- Query received transaction timelines
+```mermaid
+flowchart TD
+    P[Outbox Publisher] -->|document.exchange| EX{{document.exchange}}
+    EX -->|document.exchange| MAIN[(document.exchange.queue)]
+    MAIN --> RC[RoutingConsumer]
+    RC -->|ACK: success| DONE[Completed]
+    RC -->|NACK, requeue=false| DLX{{document.dlx}}
+    DLX --> DXQ[(document.dlx.queue)]
+    DXQ --> DC[DlxConsumer]
 
-### Routing Module
+    DC -->|retry 1| REX{{document.retry.exchange}}
+    DC -->|retry 2| REX
+    DC -->|retry 3| REX
+    REX -->|retry.1| R1[(retry queue 1<br/>TTL 10s)]
+    REX -->|retry.2| R2[(retry queue 2<br/>TTL 60s)]
+    REX -->|retry.3| R3[(retry queue 3<br/>TTL 5m)]
+    R1 -->|TTL expires| EX
+    R2 -->|TTL expires| EX
+    R3 -->|TTL expires| EX
 
-Responsible for asynchronous delivery to receiver organizations.
+    DC -->|x-retry-count >= 3| FINAL[(document.dlq)]
+    DC -->|persist for investigation| FAILED[(failed_messages)]
+```
 
-Implementation highlights:
+### ACK, NACK, and Back Pressure
 
-- Reads routing messages from RabbitMQ
-- Loads the transaction, document, sender, receiver, and latest file version
-- Downloads the file from MinIO
-- Builds a multipart request for the partner endpoint
-- Sends the request with the outbound API key
-- Updates the transaction status to `DISPATCHED`
+- Listeners use manual acknowledgements and call `basicAck` only after routing finishes successfully.
+- On failure, the consumer calls `basicNack(requeue=false)` so the message goes through the DLX instead of entering an immediate requeue loop.
+- `prefetch=1` limits each consumer to one unacknowledged message, which is appropriate for relatively heavy HTTP and file-transfer work.
+- With three retry queues, a message can be processed at most four times: the initial attempt plus three retries.
+- The `x-retry-count` header selects the retry stage. Previous `x-death` headers are removed before republishing to prevent metadata from accumulating across retry cycles.
 
-## API Summary
+### Why Use Multiple Retry Queues
 
-### Registry
+RabbitMQ does not delay individual messages with backoff when they are simply requeued to the main queue. TTL queues provide delays without holding a consumer thread:
 
-- `POST /registry/organizations`
-- `PUT /registry/organizations/{code}/suspend`
-- `PUT /registry/organizations/{code}/endpoint`
-- `POST /registry/organizations/{code}/certificates`
-- `GET /registry/organizations/{code}`
-- `PUT /registry/sla-configs/{documentPriority}`
+```text
+initial attempt -> failure -> 10 seconds -> retry 1
+retry 1 -> failure -> 60 seconds -> retry 2
+retry 2 -> failure -> 5 minutes -> retry 3
+retry 3 -> failure -> DLQ + failed_messages
+```
 
-### Exchange
+This approach is simple and observable. The trade-off is that the number of delay stages is finite and currently declared in code. If more dynamic retry schedules are required, the system could use the RabbitMQ delayed-message exchange plugin or a database-backed retry scheduler.
 
-- `POST /api/exchange`
-- `POST /api/ack`
-- `GET /api/{senderCode}/transactions/sended/{transactionCode}`
-- `GET /api/{receiverCode}/transactions/received`
+## Reliability and Idempotency
+
+### Existing Guarantees
+
+| Risk | Mechanism | Scope of the Guarantee |
+| --- | --- | --- |
+| The database commits before RabbitMQ accepts the message | Transactional Outbox | The event remains in the database for another publish attempt |
+| The target exchange or routing key is invalid | `mandatory=true` + publisher returns | The publisher detects an unroutable message |
+| The broker does not confirm the publish | Correlated publisher confirm | The outbox event is not marked `PROCESSED` |
+| Multiple publishers poll concurrently | `FOR UPDATE SKIP LOCKED` | Prevents two workers from claiming the same event at the same time |
+| A client submits the same request more than once | Redis `SET NX` keyed by `Idempotency-Key` | Blocks duplicate requests within a 10-minute TTL window |
+| RabbitMQ redelivers a routing message | Redis `SET NX` keyed by `transactionCode:receiverCode` | Reduces concurrent processing and duplicates within a 10-minute TTL window |
+| The receiver fails temporarily | TTL-based retry queues | Backoff of 10 seconds, 60 seconds, and 5 minutes |
+| A message continues to fail | DLQ + `failed_messages` table | Isolates the message and stores its payload and error for investigation |
+| The service restarts | Durable queues, persistent volumes, and the database outbox | Restores stored messages and persisted delivery intent |
+
+### Delivery Semantics
+
+The system uses **at-least-once delivery**. Duplicates can still occur in the following failure windows:
+
+- The broker accepts a message before the outbox event is marked `PROCESSED`.
+- The receiver processes the HTTP request, but the response is lost or the consumer terminates before ACKing the message.
+- Redis loses data, an idempotency key expires, or a consumer restarts after the idempotency window.
+
+For this reason, `transactionCode` must propagate through the entire flow, and receiver systems should persist it with a unique constraint or idempotency record. When the same `transactionCode` arrives again, the receiver should return the original result instead of creating another business side effect.
+
+### Production Reliability Improvements
+
+1. **Durable consumer idempotency**: replace the Redis-only TTL record with a `processed_messages` table that has a unique `(event_id, consumer_name)` key, or use a compare-and-set business state machine in PostgreSQL. Redis can remain a fast locking layer, but the database should provide the durable record.
+2. **End-to-end receiver idempotency**: require receiver endpoints to treat `transactionCode` as an idempotency key and persist the response. This is the only protection against duplicate side effects when the HTTP call succeeds but its response or RabbitMQ ACK is lost.
+3. **Outbox leases and shorter transactions**: avoid holding a database transaction while waiting for a network confirm. Claim a batch with a status or lease, publish outside the transaction, and then persist the result. A watchdog is required to reclaim expired leases.
+4. **Controlled DLQ replay**: add investigation status, operator ownership, failure classification, a replay endpoint, and audit logs. Replayed messages must retain the same event ID and idempotency key rather than receiving a new identity.
+5. **Observability**: measure queue depth, unacknowledged count, oldest-message age, publisher-confirm latency, retry count, outbox backlog, and the number of `FAILED` events; alert when thresholds are exceeded.
+6. **Quorum queues**: for a production RabbitMQ cluster, consider quorum queues so messages are replicated across nodes. A durable queue on a single broker does not protect against losing the entire node or its volume.
+7. **Poison-message policy**: distinguish retryable errors such as timeouts and 5xx responses from permanent failures such as invalid payloads, missing receivers, and business-related 4xx responses. Permanent failures should reach the DLQ sooner.
+8. **Externalized policies**: move TTL values, maximum retry counts, confirm timeouts, and outbox retention into configuration so they can vary by environment without rebuilding the application.
+
+## Core Business State
+
+```mermaid
+stateDiagram-v2
+    [*] --> VALIDATED: valid request + DB commit
+    VALIDATED --> ROUTED: broker confirms outbox publish
+    ROUTED --> DISPATCHED: receiver returns HTTP 2xx
+    DISPATCHED --> [*]
+```
+
+In addition to single-step delivery, the project supports multi-party signing, parallel distribution, acknowledgements, document recall and replacement, organization and certificate management, and SLAs. These flows share the same transaction, outbox, and routing infrastructure.
+
+## Source Structure
+
+```text
+src/main/java/com/TrucVanban
+├── exchange/       # Document intake, state, and business workflows
+├── routing/        # RabbitMQ consumers and HTTP dispatch
+├── registry/       # Organizations, certificates, endpoints, and SLAs
+├── storage/        # MinIO integration
+└── shared/
+    ├── config/     # RabbitMQ and shared configuration
+    ├── outbox/     # Outbox entity, repository, publisher, and scheduler
+    ├── dlq/        # Failed-message persistence and queries
+    └── security/   # HMAC, signatures, authentication, and authorization
+```
+
+Important entry points:
+
+- `RabbitMQConfig`: declares exchanges, queues, bindings, TTL values, and the message converter.
+- `OutboxEventPublisherServiceImpl`: polls the outbox, waits for publisher confirms, and retries publishing.
+- `RoutingConsumer`: consumes the main queue and performs manual ACK/NACK operations.
+- `DlxConsumer`: selects a retry stage or transfers the message to the final DLQ.
+- `RoutingServiceImpl`: handles idempotency, file download, and HTTP dispatch.
 
 ## Technology Stack
 
-- Java 21
-- Spring Boot 3.5.x
-- Spring Web
-- Spring Data JPA
-- Spring Security
-- Spring Validation
-- Spring AMQP
-- Spring Data Redis
-- PostgreSQL
-- Flyway
+- Java 21 and Spring Boot 3.5
+- Spring Web, Spring Data JPA, Spring AMQP, and Spring Security
+- PostgreSQL 16 and Flyway
+- RabbitMQ 3.13
+- Redis 7
 - MinIO
-- MapStruct
-- OpenAPI UI via `springdoc-openapi`
+- Testcontainers and JUnit 5
 
-## Local Development
+## Running the Project
 
 ### Prerequisites
 
-- Java 21
-- Maven
 - Docker and Docker Compose
-- PostgreSQL
-- RabbitMQ
-- Redis
-- MinIO
+- Java 21 when running or testing directly with Maven
 
-### Environment variables
+### Run the Full Stack with Docker Compose
 
-The application expects the following variables:
+```bash
+cp .env.example .env
+docker compose up -d
+docker compose ps
+```
 
-- `DB_URL`
-- `DB_USERNAME`
-- `DB_PASSWORD`
-- `RABBITMQ_HOST`
-- `RABBITMQ_PORT`
-- `RABBITMQ_USERNAME`
-- `RABBITMQ_PASSWORD`
-- `REDIS_HOST`
-- `REDIS_PORT`
-- `MINIO_ENDPOINT`
-- `MINIO_ACCESS_KEY`
-- `MINIO_SECRET_KEY`
-- `MINIO_BUCKET`
+The application is exposed through Nginx at `http://localhost`. Its health endpoint is `http://localhost/api/v1/actuator/health`. The RabbitMQ Management UI is bound to localhost only at `http://localhost:15672`.
 
-### Run locally
+Replace all example secrets in `.env.example` before deployment. PostgreSQL, Redis, RabbitMQ, and MinIO run on the internal network; do not expose their service ports directly in production.
 
-1. Start the local infrastructure.
-2. Create a `.env` file from `.env.example`.
-3. Run the Spring Boot application.
+### Main Configuration
 
-## Database Migrations
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` | PostgreSQL connection | Required |
+| `RABBITMQ_HOST`, `RABBITMQ_PORT` | RabbitMQ AMQP endpoint | Required |
+| `RABBITMQ_USERNAME`, `RABBITMQ_PASSWORD` | RabbitMQ credentials | Required |
+| `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD` | Redis idempotency and cache | Required |
+| `MINIO_ENDPOINT`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `MINIO_BUCKET` | Object storage | Required |
+| `OUTBOX_PUBLISHER_FIXED_DELAY_MS` | Outbox polling interval | `5000` ms |
 
-Flyway migration files are stored in:
+### Tests
 
-`src/main/resources/db/migration`
+```bash
+./mvnw test
+```
 
-Migration naming convention:
+Run the complete integration test suite against real PostgreSQL, Redis, and RabbitMQ instances managed by Testcontainers:
 
-`V{version}__{description}.sql`
+```bash
+./mvnw verify
+```
 
-Example:
+The machine running the integration tests must have access to a Docker daemon.
 
-`V1__create_tables.sql`
+## RabbitMQ Operations
 
-## Notes
+Monitor the following metrics regularly:
 
-- The application uses a standardized response wrapper for API responses.
-- Document exchange is asynchronous after persistence, so routing happens after the database transaction commits.
-- File content is versioned and checksummed to support traceability.
-- The existing business documentation includes additional flow diagrams and use-case details for operational reference.
+- `document.exchange.queue`: ready messages, unacknowledged messages, and consumer count.
+- `document.dlx.queue`: queued messages indicate a problem with the retry coordinator.
+- The three retry queues: message age and the rate at which messages return to the main queue.
+- `document.dlq`: every new message should trigger an alert and an investigation workflow.
+- `outbox_event`: the number of `NEW` and `FAILED` events, and the age of the oldest event.
+- `failed_messages`: error trends by receiver, endpoint, and time.
+
+Do not delete or manually republish DLQ messages before identifying the root cause. A replay must preserve the original message identity, and the receiver must provide idempotency to prevent duplicate document delivery.
+
+## Current Limitations
+
+- Routing idempotency relies on Redis with a 10-minute TTL and does not provide durable deduplication.
+- The DLQ supports database persistence and query APIs, but it does not yet have a complete replay and resolution workflow.
+- Retry policies and outbox retention are still constants in the source code.
+- Durable queues do not provide high availability when RabbitMQ runs as a single node.
+- HTTP dispatch and RabbitMQ acknowledgement cannot participate in the same distributed transaction; the design must rely on at-least-once delivery and end-to-end idempotency.
+
+## Related Documentation
+
+- `business/outbox_routing_duplicate_message_analysis.md`: analysis of duplicate-message race conditions between the outbox publisher and routing consumer.
+- `docs/backend-deployment.md`: immutable-image backend deployment model.
+- `src/main/resources/db/migration`: Flyway schema history.

@@ -1,0 +1,65 @@
+# Profile "it" (Integration Test) — Được load bởi BaseIT.java
+# Mục đích: override các giá trị mà Testcontainers sẽ thay thế bằng @DynamicPropertySource
+# và tắt các scheduler/feature không liên quan để test nhanh hơn.
+
+spring:
+  # datasource, rabbitmq, redis: Testcontainers nạp động qua @DynamicPropertySource
+  # Không cần khai báo ở đây vì chúng sẽ bị ghi đè.
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: false  # Tắt SQL log để output CI gọn hơn
+
+  # Tắt Scheduled jobs để tránh OutboxPublisher chạy ngầm và gây race condition trong IT
+  task:
+    scheduling:
+      enabled: false
+
+# JWT secret cố định cho test (Base64 encode của một chuỗi 32 byte bất kỳ)
+jwt:
+  secret: dGVzdC1zZWNyZXQta2V5LWZvci1pbnRlZ3JhdGlvbi10ZXN0LTMyYnl0
+  access-token-expiration: 7200
+  refresh-token-expiration: 604800
+
+# Tắt HMAC filter cho IT (kiểm thử nghiệp vụ, không kiểm thử security layer)
+security:
+  hmac:
+    enabled: false
+    master-key: test-master-key
+    header:
+      api-key: X-Api-Key
+      timestamp: X-Timestamp
+      nonce: X-Nonce
+      signature: X-Signature
+    algorithm: HmacSHA256
+    clock-skew: 300s
+    nonce-ttl: 300s
+    cache-ttl: 30m
+    negative-cache-ttl: 60s
+    max-body-size: 262144
+    protected-paths: []
+
+minio:
+  endpoint: http://localhost:9000
+  access-key: minioadmin
+  secret-key: minioadmin
+  bucket-name: test-bucket
+
+outbox:
+  publisher:
+    fixed-delay-ms: 999999999   # Không cho tự chạy trong IT, test sẽ gọi thủ công
+
+app:
+  visual-signature:
+    allow-insecure-ssl: true
+    external-asset-timeout-ms: 5000
+  client-simulator:
+    gateway-url: http://localhost:8080/api/v1/exchange
+    multi-sig-gateway-url: http://localhost:8080/api/v1/exchange-documents/signatures
+    private-key-path: src/main/resources/keys/simulator_private_key.pem
