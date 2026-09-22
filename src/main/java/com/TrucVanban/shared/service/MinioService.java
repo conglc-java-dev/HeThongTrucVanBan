@@ -26,6 +26,10 @@ public class MinioService {
     @Value("${minio.bucket-name}")
     private String bucketName;
 
+    /** Public endpoint để browser truy cập presigned URL, thay thế hostname nội bộ Docker */
+    @Value("${minio.public-endpoint:}")
+    private String minioPublicEndpoint;
+
     public String upload(MultipartFile file) {
         try {
             ensureBucketExists();
@@ -61,11 +65,23 @@ public class MinioService {
 
     public String getPresignedUrl(String objectName) {
         try {
-            return minioClient.getPresignedObjectUrl(GetPresignedObjectUrlArgs.builder()
+            String url = minioClient.getPresignedObjectUrl(GetPresignedObjectUrlArgs.builder()
                     .bucket(bucketName)
                     .object(objectName)
                     .method(Method.GET)
                     .build());
+
+            // Rewrite scheme+host từ internal Docker endpoint sang public endpoint.
+            // Dùng string replace để tránh double-encode query string (X-Amz-Signature sẽ bị hỏng).
+            if (minioPublicEndpoint != null && !minioPublicEndpoint.isBlank()) {
+                java.net.URI originalUri = java.net.URI.create(url);
+                String internalOrigin = originalUri.getScheme() + "://" + originalUri.getAuthority();
+                String publicOrigin = minioPublicEndpoint.replaceAll("/+$", "");
+                url = url.replace(internalOrigin, publicOrigin);
+                log.debug("[MinioService] Rewrite presigned URL: {} -> {}", internalOrigin, publicOrigin);
+            }
+
+            return url;
         } catch (MinioException | IOException | InvalidKeyException | NoSuchAlgorithmException e) {
             throw new RuntimeException("Không thể lấy URL file: " + e.getMessage(), e);
         }

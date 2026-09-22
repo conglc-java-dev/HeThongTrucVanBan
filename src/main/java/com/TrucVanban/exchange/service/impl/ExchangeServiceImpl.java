@@ -655,6 +655,10 @@ public class ExchangeServiceImpl implements ExchangeService {
 
         String transactionCode = generateTransactionCode(request.getMasterTransactionCode());
 
+        // Xác định receiver đầu tiên trong routingList (cơ quan sẽ ký tiếp theo)
+        String firstReceiverCode = request.getRoutingList().get(0);
+        Long firstReceiverId = registryService.getOrganizationIdByCode(firstReceiverCode);
+
         // Luồng ký nối không đi qua POST /exchange nên Document phải được tạo ở đây.
         if (documentRepository.existsDocumentByDocumentCode(request.getDocumentCode())) {
             throw new DuplicateResourceException("documentCode đã tồn tại: " + request.getDocumentCode());
@@ -687,9 +691,11 @@ public class ExchangeServiceImpl implements ExchangeService {
         ExchangeTransactions transaction = ExchangeTransactions.builder()
                 .masterTransactionCode(request.getMasterTransactionCode())
                 .transactionCode(transactionCode)
-                .documentId(document.getId())           
+                .documentId(document.getId())
                 .senderOrgId(senderId)
-                .receiverOrgId(senderId) // INITIATOR chưa có receiverOrgId cụ thể, tạm đặt bằng senderId
+                // receiverOrgId là cơ quan đầu tiên trong routingList — cơ quan sẽ ký tiếp theo.
+                // Sau mỗi bước ký, receiverOrgId sẽ được cập nhật theo routingList[currentStep].
+                .receiverOrgId(firstReceiverId)
                 .routingList(routingListJson)
                 .distributionList(distributionListJson)
                 .currentStep(0)
@@ -704,20 +710,19 @@ public class ExchangeServiceImpl implements ExchangeService {
         // Lưu document signatures
         saveDocumentSignatures(transaction.getId(), results, request);
 
-        // Push Outbox sang cơ quan B (routingList[0])
-        String nextReceiver = request.getRoutingList().get(0);
-        outboxEventRepository.save(toMultiSigOutboxEvent(transaction, nextReceiver,
+        // Push Outbox sang cơ quan đầu tiên trong routingList
+        outboxEventRepository.save(toMultiSigOutboxEvent(transaction, firstReceiverCode,
                 OutboxEventConstants.EVENT_TYPE_ROUTING_REQUEST));
 
         log.info("[MultiSig-INITIATOR] Tạo thành công. txId={}, documentId={}, nextReceiver={}",
-                transaction.getId(), document.getId(), nextReceiver);
+                transaction.getId(), document.getId(), firstReceiverCode);
 
         return MultiSignatureResponse.builder()
                 .transactionId(transaction.getId())
                 .masterTransactionCode(request.getMasterTransactionCode())
                 .signingFlowStatus(SigningFlowStatus.INITIATED.name())
                 .currentStep(0)
-                .nextReceiver(nextReceiver)
+                .nextReceiver(firstReceiverCode)
                 .verifiedSignaturesCount(results.size())
                 .title(request.getTitle())
                 .documentType(request.getDocumentType())
@@ -737,18 +742,23 @@ public class ExchangeServiceImpl implements ExchangeService {
         validateIssuedDate(transaction, request.getIssuedDate());
 
         int newStep = transaction.getCurrentStep() + 1;
-        transaction.setCurrentStep(newStep);
-        transaction.setCurrentStoragePath(request.getStoragePath());
-        transaction.setSigningFlowStatus(SigningFlowStatus.WAITING_FOR_ROUTING_SIGN);
-        exchangeTransactionsRepository.save(transaction);
 
-        // Lưu document signatures (chưa có bước này, chỉ lưu chữ ký mới nhất)
-        saveDocumentSignatures(transaction.getId(), results, request);
-
-        // Xác định nextReceiver từ routingList
+        // Xác định nextReceiver trước khi save để cập nhật receiverOrgId đúng
         List<String> routingList = objectMapper.convertValue(
                 transaction.getRoutingList(), List.class);
         String nextReceiver = newStep < routingList.size() ? routingList.get(newStep) : null;
+
+        transaction.setCurrentStep(newStep);
+        transaction.setCurrentStoragePath(request.getStoragePath());
+        transaction.setSigningFlowStatus(SigningFlowStatus.WAITING_FOR_ROUTING_SIGN);
+        // Cập nhật receiverOrgId thành cơ quan kế tiếp trong chuỗi ký
+        if (nextReceiver != null) {
+            Long nextReceiverId = registryService.getOrganizationIdByCode(nextReceiver);
+            transaction.setReceiverOrgId(nextReceiverId);
+        }
+        exchangeTransactionsRepository.save(transaction);
+
+        saveDocumentSignatures(transaction.getId(), results, request);
 
         if (nextReceiver != null) {
             outboxEventRepository.save(toMultiSigOutboxEvent(transaction, nextReceiver,
