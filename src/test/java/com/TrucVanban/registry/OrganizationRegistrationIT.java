@@ -179,12 +179,20 @@ class OrganizationRegistrationIT extends BaseIT {
     class UpdateOrganizationStatus {
 
         @Test
-        @DisplayName("Approve tổ chức → DB status = ACTIVE, Redis cache API key bị evict")
-        void updateStatus_approve_shouldChangeStatusAndEvictRedisCache() {
-            // GIVEN: tạo org
+        @DisplayName("Suspend tổ chức (ACTIVE → SUSPENDED) → DB status = SUSPENDED, Redis cache API key bị evict")
+        void updateStatus_suspend_shouldChangeStatusAndEvictRedisCache() {
+            // GIVEN: tạo org (PENDING_APPROVAL)
             restTemplate.postForEntity(
                     baseUrl() + "/registry/organizations",
                     buildValidRequest(TEST_ORG_CODE), Object.class);
+
+            // GIVEN: approve org sang ACTIVE
+            UpdateOrganizationStatusRequest approveReq = new UpdateOrganizationStatusRequest();
+            approveReq.setStatus(OrganizationStatus.ACTIVE);
+            restTemplate.exchange(
+                    baseUrl() + "/registry/organizations/" + TEST_ORG_CODE + "/status",
+                    HttpMethod.PATCH, new HttpEntity<>(approveReq), Object.class);
+
             Organization org = organizationRepository.findByCode(TEST_ORG_CODE).orElseThrow();
 
             // GIVEN: seed API key vào DB + Redis để giả lập có cache tồn tại
@@ -202,20 +210,21 @@ class OrganizationRegistrationIT extends BaseIT {
             redisTemplate.opsForValue().set("apikey:IT_KEY_001", "{\"keyId\":\"IT_KEY_001\"}");
             redisTemplate.opsForSet().add("agency:keys:" + org.getId(), "IT_KEY_001");
 
-            // WHEN: approve
-            UpdateOrganizationStatusRequest updateReq = new UpdateOrganizationStatusRequest();
-            updateReq.setStatus(OrganizationStatus.ACTIVE);
+            // WHEN: suspend tổ chức (ACTIVE -> SUSPENDED kích hoạt evict cache)
+            UpdateOrganizationStatusRequest suspendReq = new UpdateOrganizationStatusRequest();
+            suspendReq.setStatus(OrganizationStatus.SUSPENDED);
+            suspendReq.setReason("Tạm đình chỉ hoạt động để kiểm thử cache eviction");
             restTemplate.exchange(
                     baseUrl() + "/registry/organizations/" + TEST_ORG_CODE + "/status",
-                    HttpMethod.PATCH, new HttpEntity<>(updateReq), Object.class);
+                    HttpMethod.PATCH, new HttpEntity<>(suspendReq), Object.class);
 
-            // THEN — DB status = ACTIVE
+            // THEN — DB status = SUSPENDED
             Organization updated = organizationRepository.findByCode(TEST_ORG_CODE).orElseThrow();
             assertThat(updated.getStatus())
-                    .as("Trạng thái trong DB phải là ACTIVE sau khi approve")
-                    .isEqualTo(OrganizationStatus.ACTIVE);
+                    .as("Trạng thái trong DB phải là SUSPENDED sau khi suspend")
+                    .isEqualTo(OrganizationStatus.SUSPENDED);
 
-            // THEN — Redis cache đã bị evict
+            // THEN — Redis cache đã bị evict (evictAgencyCache chạy khi status là SUSPENDED/REJECTED)
             Boolean cacheExists = redisTemplate.hasKey("apikey:IT_KEY_001");
             assertThat(cacheExists)
                     .as("Redis cache 'apikey:IT_KEY_001' phải bị xóa sau khi evict cache tổ chức")
@@ -223,8 +232,8 @@ class OrganizationRegistrationIT extends BaseIT {
         }
 
         @Test
-        @DisplayName("PENDING_APPROVAL → SUSPENDED trực tiếp → HTTP 400 (vi phạm state machine)")
-        void updateStatus_invalidTransition_shouldReturn400() {
+        @DisplayName("PENDING_APPROVAL → SUSPENDED trực tiếp → HTTP 409 (vi phạm state machine)")
+        void updateStatus_invalidTransition_shouldReturn409() {
             // GIVEN: org đang ở PENDING_APPROVAL
             restTemplate.postForEntity(
                     baseUrl() + "/registry/organizations",
@@ -238,10 +247,10 @@ class OrganizationRegistrationIT extends BaseIT {
                     baseUrl() + "/registry/organizations/" + TEST_ORG_CODE + "/status",
                     HttpMethod.PATCH, new HttpEntity<>(updateReq), Object.class);
 
-            // THEN — HTTP 400
+            // THEN — HTTP 409 Conflict (BusinessLogicException được GlobalException map sang 409)
             assertThat(response.getStatusCode())
-                    .as("Vi phạm state machine phải trả về HTTP 400")
-                    .isEqualTo(HttpStatus.BAD_REQUEST);
+                    .as("Vi phạm state machine phải trả về HTTP 409 Conflict")
+                    .isEqualTo(HttpStatus.CONFLICT);
 
             // THEN — Status trong DB không thay đổi
             Organization unchanged = organizationRepository.findByCode(TEST_ORG_CODE).orElseThrow();

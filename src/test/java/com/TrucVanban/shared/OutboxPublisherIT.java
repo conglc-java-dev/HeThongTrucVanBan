@@ -25,6 +25,7 @@ import org.springframework.amqp.core.Message;
 import org.springframework.amqp.core.MessageBuilder;
 import org.springframework.amqp.rabbit.core.RabbitAdmin;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.amqp.rabbit.listener.RabbitListenerEndpointRegistry;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.time.LocalDateTime;
@@ -68,6 +69,9 @@ class OutboxPublisherIT extends BaseIT {
 
     @Autowired
     private RabbitAdmin rabbitAdmin;
+
+    @Autowired
+    private RabbitListenerEndpointRegistry rabbitListenerEndpointRegistry;
 
     @Autowired
     private ObjectMapper objectMapper;
@@ -156,25 +160,31 @@ class OutboxPublisherIT extends BaseIT {
                 .status(OutboxEventStatus.NEW)
                 .build());
 
-        // WHEN: gọi publisher thủ công (scheduler bị disable trong profile it)
-        outboxEventPublisherService.publishPendingEvents();
+        // Dừng listener container để RoutingConsumer không tự động consume message trước khi test assert
+        rabbitListenerEndpointRegistry.stop();
+        try {
+            // WHEN: gọi publisher thủ công (scheduler bị disable trong profile it)
+            outboxEventPublisherService.publishPendingEvents();
 
-        // THEN — OutboxEvent trong DB phải chuyển sang PROCESSED
-        OutboxEvent updated = outboxEventRepository.findById(event.getId()).orElseThrow();
-        assertThat(updated.getStatus())
-                .as("OutboxEvent phải được đánh dấu PROCESSED sau khi publish thành công")
-                .isEqualTo(OutboxEventStatus.PROCESSED);
-        assertThat(updated.getProcessedAt())
-                .as("processedAt phải được set")
-                .isNotNull();
+            // THEN — OutboxEvent trong DB phải chuyển sang PROCESSED
+            OutboxEvent updated = outboxEventRepository.findById(event.getId()).orElseThrow();
+            assertThat(updated.getStatus())
+                    .as("OutboxEvent phải được đánh dấu PROCESSED sau khi publish thành công")
+                    .isEqualTo(OutboxEventStatus.PROCESSED);
+            assertThat(updated.getProcessedAt())
+                    .as("processedAt phải được set")
+                    .isNotNull();
 
-        // THEN — Message thực sự có mặt trong queue RabbitMQ
-        // (Dùng receive với timeout ngắn để đọc message từ queue)
-        Message receivedMessage = rabbitTemplate.receive(
-                RabbitMQConfig.DOCUMENT_EXCHANGE_QUEUE, 5000L);
-        assertThat(receivedMessage)
-                .as("Phải có ít nhất 1 message trong queue '%s' sau khi publish",
-                        RabbitMQConfig.DOCUMENT_EXCHANGE_QUEUE)
-                .isNotNull();
+            // THEN — Message thực sự có mặt trong queue RabbitMQ
+            // (Dùng receive với timeout ngắn để đọc message từ queue)
+            Message receivedMessage = rabbitTemplate.receive(
+                    RabbitMQConfig.DOCUMENT_EXCHANGE_QUEUE, 5000L);
+            assertThat(receivedMessage)
+                    .as("Phải có ít nhất 1 message trong queue '%s' sau khi publish",
+                            RabbitMQConfig.DOCUMENT_EXCHANGE_QUEUE)
+                    .isNotNull();
+        } finally {
+            rabbitListenerEndpointRegistry.start();
+        }
     }
 }

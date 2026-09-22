@@ -35,7 +35,7 @@ class FlywayMigrationIT extends BaseIT {
             "documents",
             "document_versions",
             "exchange_transactions",
-            "status_history",
+            "status_histories",
             "outbox_event",
             "failed_messages",
             "api_keys",
