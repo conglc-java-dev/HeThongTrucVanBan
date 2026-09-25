@@ -10,7 +10,7 @@ import com.TrucVanban.registry.repository.OrganizationRepository;
 import com.TrucVanban.registry.service.impl.ApiKeyManagementServiceImpl;
 import com.TrucVanban.shared.exception.BusinessLogicException;
 import com.TrucVanban.shared.exception.ResourceNotFoundException;
-import com.TrucVanban.shared.security.hmac.AesGcmEncryptionService;
+import com.TrucVanban.infrastructure.security.hmac.AesGcmEncryptionService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

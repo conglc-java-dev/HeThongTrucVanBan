@@ -1,8 +1,8 @@
 package com.TrucVanban.shared;
 
 import com.TrucVanban.BaseIT;
-import com.TrucVanban.shared.config.RabbitMQConfig;
-import com.TrucVanban.shared.dlq.repository.FailedMessageRepository;
+import com.TrucVanban.infrastructure.messaging.config.RabbitMQConfig;
+import com.TrucVanban.infrastructure.messaging.dlq.repository.FailedMessageRepository;
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;

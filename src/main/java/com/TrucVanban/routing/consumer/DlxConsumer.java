@@ -1,7 +1,7 @@
 package com.TrucVanban.routing.consumer;
 
-import com.TrucVanban.shared.config.RabbitMQConfig;
-import com.TrucVanban.shared.dlq.service.FailedMessageService;
+import com.TrucVanban.infrastructure.messaging.config.RabbitMQConfig;
+import com.TrucVanban.infrastructure.messaging.dlq.service.FailedMessageService;
 import com.rabbitmq.client.Channel;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;

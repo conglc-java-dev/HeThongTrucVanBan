@@ -2,7 +2,7 @@ package com.TrucVanban.routing.consumer;
 
 import com.TrucVanban.routing.dto.request.RoutingRequest;
 import com.TrucVanban.routing.service.RoutingService;
-import com.TrucVanban.shared.config.RabbitMQConfig;
+import com.TrucVanban.infrastructure.messaging.config.RabbitMQConfig;
 import com.rabbitmq.client.Channel;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;

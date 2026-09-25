@@ -11,7 +11,7 @@ import com.TrucVanban.registry.enums.OrganizationStatus;
 import com.TrucVanban.registry.repository.ApiKeyRepository;
 import com.TrucVanban.registry.repository.CertificateRepository;
 import com.TrucVanban.registry.repository.OrganizationRepository;
-import com.TrucVanban.shared.security.hmac.AesGcmEncryptionService;
+import com.TrucVanban.infrastructure.security.hmac.AesGcmEncryptionService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;

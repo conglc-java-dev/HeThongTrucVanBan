@@ -1,6 +1,6 @@
 package com.TrucVanban.shared.config;
 
-import com.TrucVanban.shared.security.hmac.AgencyAuthorizationInterceptor;
+import com.TrucVanban.infrastructure.security.hmac.AgencyAuthorizationInterceptor;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;

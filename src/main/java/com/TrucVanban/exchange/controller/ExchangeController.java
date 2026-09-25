@@ -15,7 +15,7 @@ import com.TrucVanban.exchange.dto.response.TransactionReceivedStatusResponse;
 import com.TrucVanban.exchange.dto.response.TransactionSendStatusResponse;
 import com.TrucVanban.exchange.service.ExchangeService;
 import com.TrucVanban.shared.ResponseData;
-import com.TrucVanban.shared.security.hmac.RequireAgencyMatch;
+import com.TrucVanban.infrastructure.security.hmac.RequireAgencyMatch;
 import com.TrucVanban.shared.utils.ListUtils;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;

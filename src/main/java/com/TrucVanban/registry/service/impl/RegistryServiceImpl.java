@@ -19,7 +19,7 @@ import com.TrucVanban.registry.service.RegistryService;
 import com.TrucVanban.registry.validator.OrganizationStateTransitionValidator;
 import com.TrucVanban.shared.exception.DuplicateResourceException;
 import com.TrucVanban.shared.exception.ResourceNotFoundException;
-import com.TrucVanban.shared.security.hmac.ApiKeyCacheService;
+import com.TrucVanban.infrastructure.security.hmac.ApiKeyCacheService;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

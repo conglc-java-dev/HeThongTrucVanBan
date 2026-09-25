@@ -20,7 +20,7 @@ import com.TrucVanban.registry.validator.OrganizationStateTransitionValidator;
 import com.TrucVanban.shared.exception.BusinessLogicException;
 import com.TrucVanban.shared.exception.DuplicateResourceException;
 import com.TrucVanban.shared.exception.ResourceNotFoundException;
-import com.TrucVanban.shared.security.hmac.ApiKeyCacheService;
+import com.TrucVanban.infrastructure.security.hmac.ApiKeyCacheService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;

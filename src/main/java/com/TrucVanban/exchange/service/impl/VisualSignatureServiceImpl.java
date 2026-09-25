@@ -5,7 +5,7 @@ import com.TrucVanban.exchange.service.VisualSignatureService;
 import com.TrucVanban.registry.entity.OrganizationVisualAsset;
 import com.TrucVanban.registry.enums.AssetType;
 import com.TrucVanban.registry.repository.OrganizationVisualAssetRepository;
-import com.TrucVanban.shared.service.MinioService;
+import com.TrucVanban.storage.service.MinioService;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -112,7 +112,7 @@ public class VisualSignatureServiceImpl implements VisualSignatureService {
 
                 // 2. Tải file PDF gốc từ MinIO
                 byte[] pdfBytes;
-                try (InputStream pdfStream = minioService.download(storagePath)) {
+                try (InputStream pdfStream = minioService.downloadAsStream(storagePath)) {
                         pdfBytes = pdfStream.readAllBytes();
                 }
                 log.info("[VisualSig] Tải PDF gốc: {} bytes", pdfBytes.length);
@@ -157,7 +157,7 @@ public class VisualSignatureServiceImpl implements VisualSignatureService {
                                 return bytes;
                         }
                 } else {
-                        try (InputStream stream = minioService.download(imageUrl)) {
+                        try (InputStream stream = minioService.downloadAsStream(imageUrl)) {
                                 byte[] bytes = stream.readAllBytes();
                                 log.info("[VisualSig] Tải từ MinIO thành công: {} bytes", bytes.length);
                                 return bytes;

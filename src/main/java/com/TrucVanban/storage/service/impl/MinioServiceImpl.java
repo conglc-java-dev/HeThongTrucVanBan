@@ -10,7 +10,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 import java.util.UUID;
@@ -46,6 +48,23 @@ public class MinioServiceImpl implements MinioService {
     }
 
     @Override
+    public String uploadBytes(String objectName, byte[] data, String contentType) {
+        try {
+            ensureBucketExists();
+            minioClient.putObject(PutObjectArgs.builder()
+                    .bucket(bucketName)
+                    .object(objectName)
+                    .stream(new ByteArrayInputStream(data), data.length, -1)
+                    .contentType(contentType)
+                    .build());
+            log.info("Upload bytes thành công: {} ({} bytes)", objectName, data.length);
+            return objectName;
+        } catch (MinioException | IOException | InvalidKeyException | NoSuchAlgorithmException e) {
+            throw new RuntimeException("Upload bytes thất bại: " + e.getMessage(), e);
+        }
+    }
+
+    @Override
     public String getPresignedUrl(String objectName) {
         try {
             String url = minioClient.getPresignedObjectUrl(GetPresignedObjectUrlArgs.builder()
@@ -56,19 +75,14 @@ public class MinioServiceImpl implements MinioService {
 
             if (minioPublicEndpoint != null && !minioPublicEndpoint.isBlank()) {
                 java.net.URI originalUri = java.net.URI.create(url);
-                java.net.URI publicUri = java.net.URI.create(minioPublicEndpoint);
-
-                return new java.net.URI(
-                        publicUri.getScheme(),
-                        originalUri.getRawAuthority() != null ? publicUri.getAuthority() : null,
-                        originalUri.getPath(),
-                        originalUri.getRawQuery(),
-                        originalUri.getRawFragment()).toString();
+                String internalOrigin = originalUri.getScheme() + "://" + originalUri.getAuthority();
+                String publicOrigin = minioPublicEndpoint.replaceAll("/+$", "");
+                url = url.replace(internalOrigin, publicOrigin);
+                log.debug("[MinioService] Rewrite presigned URL: {} -> {}", internalOrigin, publicOrigin);
             }
 
             return url;
-        } catch (MinioException | IOException | InvalidKeyException | NoSuchAlgorithmException
-                | java.net.URISyntaxException e) {
+        } catch (MinioException | IOException | InvalidKeyException | NoSuchAlgorithmException e) {
             throw new RuntimeException("Không thể lấy URL file: " + e.getMessage(), e);
         }
     }
@@ -82,6 +96,18 @@ public class MinioServiceImpl implements MinioService {
             return stream.readAllBytes();
         } catch (MinioException | IOException | InvalidKeyException | NoSuchAlgorithmException e) {
             throw new RuntimeException("Tải file từ MinIO thất bại: " + e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public InputStream downloadAsStream(String objectName) {
+        try {
+            return minioClient.getObject(GetObjectArgs.builder()
+                    .bucket(bucketName)
+                    .object(objectName)
+                    .build());
+        } catch (MinioException | IOException | InvalidKeyException | NoSuchAlgorithmException e) {
+            throw new RuntimeException("Tải file từ MinIO thất bại: objectKey=" + objectName + " | " + e.getMessage(), e);
         }
     }
 

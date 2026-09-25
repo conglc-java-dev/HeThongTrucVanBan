@@ -9,7 +9,7 @@ import com.TrucVanban.exchange.dto.request.send.VisualSignatureRequest;
 import com.TrucVanban.exchange.dto.response.FileUploadResponse;
 import com.TrucVanban.exchange.service.ClientSimulatorService;
 import com.TrucVanban.exchange.service.VisualSignatureService;
-import com.TrucVanban.shared.service.MinioService;
+import com.TrucVanban.storage.service.MinioService;
 import com.TrucVanban.shared.utils.CanonicalStringBuilder;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
@@ -110,7 +110,7 @@ public class ClientSimulatorServiceImpl implements ClientSimulatorService {
                     stampCoords, signatureCoords);
 
             // Tính lại checksum từ file MỚI (đã có dấu)
-            try (InputStream newPdfStream = minioService.download(effectiveStoragePath)) {
+            try (InputStream newPdfStream = minioService.downloadAsStream(effectiveStoragePath)) {
                 byte[] newPdfBytes = newPdfStream.readAllBytes();
                 byte[] hashBytes = MessageDigest.getInstance("SHA-256").digest(newPdfBytes);
                 effectiveChecksum = computeHexChecksum(hashBytes);
