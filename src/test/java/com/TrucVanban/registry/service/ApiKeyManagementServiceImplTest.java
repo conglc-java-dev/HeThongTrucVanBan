@@ -88,19 +88,20 @@ class ApiKeyManagementServiceImplTest {
     }
 
     @Test
-    @DisplayName("createApiKey - Thất bại: Tổ chức PENDING_APPROVAL → BusinessLogicException")
-    void createApiKey_OrgPendingApproval_ShouldThrow() {
+    @DisplayName("createApiKey - Thất bại: Tổ chức SUSPENDED → BusinessLogicException")
+    void createApiKey_OrgSuspended_ShouldThrow() {
         // ARRANGE
-        Organization pendingOrg = Organization.builder()
+        Organization suspendedOrg2 = Organization.builder()
                 .id(2L).code("AGENCY-B")
-                .status(OrganizationStatus.PENDING_APPROVAL)
+                .status(OrganizationStatus.SUSPENDED)
                 .build();
 
-        when(organizationRepository.findByCode("AGENCY-B")).thenReturn(Optional.of(pendingOrg));
+        when(organizationRepository.findByCode("AGENCY-B")).thenReturn(Optional.of(suspendedOrg2));
 
         // ACT & ASSERT
         assertThatThrownBy(() -> apiKeyManagementService.createApiKey("AGENCY-B", null))
-                .isInstanceOf(BusinessLogicException.class);
+                .isInstanceOf(BusinessLogicException.class)
+                .hasMessageContaining("ACTIVE");
 
         verify(apiKeyRepository, never()).save(any());
     }

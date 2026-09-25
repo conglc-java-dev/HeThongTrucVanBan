@@ -1,11 +1,10 @@
 package com.TrucVanban.registry.dto.response;
 
+import com.TrucVanban.registry.enums.OrganizationStatus;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-
-import com.TrucVanban.registry.enums.OrganizationStatus;
 
 @Data
 @Builder

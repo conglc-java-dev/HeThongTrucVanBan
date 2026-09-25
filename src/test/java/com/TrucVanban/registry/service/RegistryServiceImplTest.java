@@ -2,9 +2,9 @@ package com.TrucVanban.registry.service;
 
 import com.TrucVanban.registry.dto.request.CertificateRequest;
 import com.TrucVanban.registry.dto.request.RegisterOrganizationRequest;
-import com.TrucVanban.registry.dto.request.UpdateOrganizationStatusRequest;
+import com.TrucVanban.registry.dto.request.SuspendOrganizationRequest;
 import com.TrucVanban.registry.dto.response.RegisterOrganizationResponse;
-import com.TrucVanban.registry.dto.response.UpdateOrganizationStatusResponse;
+import com.TrucVanban.registry.dto.response.SuspendOrganizationResponse;
 import com.TrucVanban.registry.entity.Certificate;
 import com.TrucVanban.registry.entity.Organization;
 import com.TrucVanban.registry.enums.CertificateStatus;
@@ -16,7 +16,6 @@ import com.TrucVanban.registry.repository.OrganizationRepository;
 import com.TrucVanban.registry.repository.OrganizationVisualAssetRepository;
 import com.TrucVanban.registry.repository.SlaConfigurationRepository;
 import com.TrucVanban.registry.service.impl.RegistryServiceImpl;
-import com.TrucVanban.registry.validator.OrganizationStateTransitionValidator;
 import com.TrucVanban.shared.exception.BusinessLogicException;
 import com.TrucVanban.shared.exception.DuplicateResourceException;
 import com.TrucVanban.shared.exception.ResourceNotFoundException;
@@ -37,7 +36,6 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 /**
@@ -45,7 +43,7 @@ import static org.mockito.Mockito.*;
  *
  * Sử dụng @Nested để phân nhóm các kịch bản test theo từng hàm nghiệp vụ:
  * - registerOrganization     : kiểm tra duplicate code, lưu org và cert
- * - updateOrganizationStatus : state machine + cache eviction
+ * - suspendOrganization      : khóa khẩn cấp + evict API key cache
  * - updateCertificate        : expire cert cũ, tạo cert mới
  * - checkCertificate         : so sánh key + kiểm tra ngày hết hạn
  * - getOrganizationIdsByCode : phát hiện missing codes, bảo toàn thứ tự ID
@@ -61,7 +59,6 @@ class RegistryServiceImplTest {
     @Mock private OrganizationVisualAssetRepository visualAssetRepository;
     @Mock private OrganizationMapper organizationMapper;
     @Mock private SlaConfigMapper slaConfigMapper;
-    @Mock private OrganizationStateTransitionValidator organizationStateTransitionValidator;
     @Mock private ApiKeyCacheService apiKeyCacheService;
 
     // ---- Class thực sự cần test, Mockito tự inject các @Mock ở trên vào đây ----
@@ -88,7 +85,7 @@ class RegistryServiceImplTest {
             Organization savedOrg = Organization.builder().id(1L).code("AGENCY-A").build();
             Certificate savedCert = Certificate.builder().id(10L).build();
             RegisterOrganizationResponse expectedResponse = RegisterOrganizationResponse.builder()
-                    .organizationId(1L).code("AGENCY-A").status(OrganizationStatus.PENDING_APPROVAL)
+                    .organizationId(1L).code("AGENCY-A").status(OrganizationStatus.ACTIVE)
                     .build();
 
             when(organizationRepository.existsByCode("AGENCY-A")).thenReturn(false);
@@ -103,7 +100,7 @@ class RegistryServiceImplTest {
 
             // ASSERT
             assertThat(actual.getCode()).isEqualTo("AGENCY-A");
-            assertThat(actual.getStatus()).isEqualTo(OrganizationStatus.PENDING_APPROVAL);
+            assertThat(actual.getStatus()).isEqualTo(OrganizationStatus.ACTIVE);
 
             // Xác nhận cả 2 lần save: 1 lần cho org, 1 lần cho cert
             verify(organizationRepository, times(1)).save(any(Organization.class));
@@ -131,108 +128,75 @@ class RegistryServiceImplTest {
     }
 
     // =================================================================
-    // 2. updateOrganizationStatus
+    // 2. suspendOrganization
     // =================================================================
     @Nested
-    @DisplayName("updateOrganizationStatus() - Cập nhật trạng thái cơ quan")
-    class UpdateOrganizationStatusTests {
+    @DisplayName("suspendOrganization() - Khóa khẩn cấp tổ chức")
+    class SuspendOrganizationTests {
 
         @Test
-        @DisplayName("Thất bại: Không tìm thấy tổ chức → ResourceNotFoundException")
-        void updateOrganizationStatus_OrgNotFound_ShouldThrow() {
-            // ARRANGE
-            when(organizationRepository.findByCode("UNKNOWN")).thenReturn(Optional.empty());
-
-            UpdateOrganizationStatusRequest request = new UpdateOrganizationStatusRequest();
-            request.setStatus(OrganizationStatus.ACTIVE);
-
-            // ACT & ASSERT
-            assertThatThrownBy(() -> registryService.updateOrganizationStatus("UNKNOWN", request))
-                    .isInstanceOf(ResourceNotFoundException.class)
-                    .hasMessageContaining("UNKNOWN");
-        }
-
-        @Test
-        @DisplayName("Chuyển sang SUSPENDED: Phải evict API key cache")
-        void updateOrganizationStatus_ToSuspended_ShouldEvictCache() {
+        @DisplayName("Thành công: ACTIVE → SUSPENDED, evict API key cache")
+        void suspendOrganization_FromActive_ShouldSuspendAndEvictCache() {
             // ARRANGE
             Organization org = Organization.builder()
                     .id(5L).code("AGENCY-B").status(OrganizationStatus.ACTIVE)
                     .build();
 
-            UpdateOrganizationStatusRequest request = new UpdateOrganizationStatusRequest();
-            request.setStatus(OrganizationStatus.SUSPENDED);
-            request.setReason("Vi phạm quy định bảo mật");
+            SuspendOrganizationRequest request = new SuspendOrganizationRequest();
+            request.setReason("Phát hiện lưu lượng bất thường, nghi ngờ lộ lọt Private Key");
 
             when(organizationRepository.findByCode("AGENCY-B")).thenReturn(Optional.of(org));
             when(organizationRepository.save(org)).thenReturn(org);
 
             // ACT
-            registryService.updateOrganizationStatus("AGENCY-B", request);
+            SuspendOrganizationResponse response = registryService.suspendOrganization("AGENCY-B", request);
 
-            // ASSERT - Quan trọng: cache phải được xóa khi SUSPENDED
+            // ASSERT
+            assertThat(response.getCode()).isEqualTo("AGENCY-B");
+            assertThat(response.getStatus()).isEqualTo(OrganizationStatus.SUSPENDED);
+
+            // Cache phải bị evict ngay để chặn mọi giao dịch
             verify(apiKeyCacheService, times(1)).evictAgencyCache(5L);
             verify(organizationRepository, times(1)).save(org);
         }
 
         @Test
-        @DisplayName("Chuyển sang REJECTED: Lưu rejectReason + evict cache")
-        void updateOrganizationStatus_ToRejected_ShouldSaveReasonAndEvictCache() {
+        @DisplayName("Thất bại: Không tìm thấy tổ chức → ResourceNotFoundException")
+        void suspendOrganization_OrgNotFound_ShouldThrow() {
             // ARRANGE
-            Organization org = Organization.builder()
-                    .id(6L).code("AGENCY-C").status(OrganizationStatus.PENDING_APPROVAL)
-                    .build();
+            when(organizationRepository.findByCode("GHOST")).thenReturn(Optional.empty());
 
-            UpdateOrganizationStatusRequest request = new UpdateOrganizationStatusRequest();
-            request.setStatus(OrganizationStatus.REJECTED);
-            request.setReason("Hồ sơ không hợp lệ");
+            SuspendOrganizationRequest request = new SuspendOrganizationRequest();
+            request.setReason("Lý do bất kỳ");
 
-            when(organizationRepository.findByCode("AGENCY-C")).thenReturn(Optional.of(org));
-            when(organizationRepository.save(org)).thenReturn(org);
+            // ACT & ASSERT
+            assertThatThrownBy(() -> registryService.suspendOrganization("GHOST", request))
+                    .isInstanceOf(ResourceNotFoundException.class)
+                    .hasMessageContaining("GHOST");
 
-            // ACT
-            registryService.updateOrganizationStatus("AGENCY-C", request);
-
-            // ASSERT
-            ArgumentCaptor<Organization> captor = ArgumentCaptor.forClass(Organization.class);
-            verify(organizationRepository).save(captor.capture());
-
-            Organization savedOrg = captor.getValue();
-            assertThat(savedOrg.getStatus()).isEqualTo(OrganizationStatus.REJECTED);
-            assertThat(savedOrg.getRejectReason()).isEqualTo("Hồ sơ không hợp lệ");
-
-            // Cache cũng phải được evict
-            verify(apiKeyCacheService, times(1)).evictAgencyCache(6L);
+            verify(apiKeyCacheService, never()).evictAgencyCache(any());
         }
 
         @Test
-        @DisplayName("Chuyển sang ACTIVE: Xóa rejectReason, KHÔNG evict cache")
-        void updateOrganizationStatus_ToActive_ShouldClearRejectReasonAndNotEvictCache() {
+        @DisplayName("Thất bại: Tổ chức đã SUSPENDED → BusinessLogicException")
+        void suspendOrganization_AlreadySuspended_ShouldThrow() {
             // ARRANGE
             Organization org = Organization.builder()
-                    .id(7L).code("AGENCY-D")
-                    .status(OrganizationStatus.SUSPENDED)
-                    .rejectReason("Lý do cũ")
+                    .id(6L).code("AGENCY-C").status(OrganizationStatus.SUSPENDED)
                     .build();
 
-            UpdateOrganizationStatusRequest request = new UpdateOrganizationStatusRequest();
-            request.setStatus(OrganizationStatus.ACTIVE);
+            when(organizationRepository.findByCode("AGENCY-C")).thenReturn(Optional.of(org));
 
-            when(organizationRepository.findByCode("AGENCY-D")).thenReturn(Optional.of(org));
-            when(organizationRepository.save(org)).thenReturn(org);
+            SuspendOrganizationRequest request = new SuspendOrganizationRequest();
+            request.setReason("Lý do bất kỳ");
 
-            // ACT
-            registryService.updateOrganizationStatus("AGENCY-D", request);
+            // ACT & ASSERT
+            assertThatThrownBy(() -> registryService.suspendOrganization("AGENCY-C", request))
+                    .isInstanceOf(BusinessLogicException.class)
+                    .hasMessageContaining("ACTIVE");
 
-            // ASSERT
-            ArgumentCaptor<Organization> captor = ArgumentCaptor.forClass(Organization.class);
-            verify(organizationRepository).save(captor.capture());
-
-            Organization savedOrg = captor.getValue();
-            assertThat(savedOrg.getStatus()).isEqualTo(OrganizationStatus.ACTIVE);
-            assertThat(savedOrg.getRejectReason()).isNull();
-
-            // ACTIVE không evict cache
+            // Không được ghi DB hay evict cache khi validation thất bại
+            verify(organizationRepository, never()).save(any());
             verify(apiKeyCacheService, never()).evictAgencyCache(any());
         }
     }

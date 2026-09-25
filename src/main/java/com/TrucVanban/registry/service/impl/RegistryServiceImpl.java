@@ -16,7 +16,7 @@ import com.TrucVanban.registry.repository.OrganizationRepository;
 import com.TrucVanban.registry.repository.OrganizationVisualAssetRepository;
 import com.TrucVanban.registry.repository.SlaConfigurationRepository;
 import com.TrucVanban.registry.service.RegistryService;
-import com.TrucVanban.registry.validator.OrganizationStateTransitionValidator;
+import com.TrucVanban.shared.exception.BusinessLogicException;
 import com.TrucVanban.shared.exception.DuplicateResourceException;
 import com.TrucVanban.shared.exception.ResourceNotFoundException;
 import com.TrucVanban.infrastructure.security.hmac.ApiKeyCacheService;
@@ -32,6 +32,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.TrucVanban.registry.enums.OrganizationStatus;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -43,7 +47,6 @@ public class RegistryServiceImpl implements RegistryService {
     private final OrganizationVisualAssetRepository visualAssetRepository;
     private final OrganizationMapper organizationMapper;
     private final SlaConfigMapper slaConfigMapper;
-    private final OrganizationStateTransitionValidator organizationStateTransitionValidator;
     private final ApiKeyCacheService apiKeyCacheService;
 
     @Override
@@ -60,40 +63,32 @@ public class RegistryServiceImpl implements RegistryService {
         certificate.setOrganizationId(organization.getId());
         certificateRepository.save(certificate);
 
-        log.info("Đăng ký tổ chức - chờ phê duyệt: code={}, id={}", organization.getCode(), organization.getId());
+        log.info("Tạo cơ quan thành công: code={}, id={}", organization.getCode(), organization.getId());
 
         return organizationMapper.toRegisterResponse(organization);
     }
 
     @Override
     @Transactional
-    public UpdateOrganizationStatusResponse updateOrganizationStatus(String code,
-            UpdateOrganizationStatusRequest request) {
+    public SuspendOrganizationResponse suspendOrganization(String code, SuspendOrganizationRequest request) {
         Organization organization = organizationRepository.findByCode(code)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy tổ chức với mã: " + code));
 
-        OrganizationStatus current = organization.getStatus();
-        OrganizationStatus target = request.getStatus();
-
-        organizationStateTransitionValidator.validate(code, current, target, request.getReason());
-
-        organization.setStatus(target);
-        if (target == OrganizationStatus.REJECTED) {
-            organization.setRejectReason(request.getReason());
-        } else if (target == OrganizationStatus.ACTIVE) {
-            organization.setRejectReason(null);
+        if (organization.getStatus() != OrganizationStatus.ACTIVE) {
+            throw new BusinessLogicException(
+                    "Chỉ có thể khóa tổ chức đang ở trạng thái ACTIVE. Trạng thái hiện tại: "
+                            + organization.getStatus());
         }
-        
-        // Clear API key cache (organization_status=REJECTED/SUSPENDED)
-        if (target == OrganizationStatus.REJECTED || target == OrganizationStatus.SUSPENDED) {
-            apiKeyCacheService.evictAgencyCache(organization.getId());
-        }
-        
+
+        organization.setStatus(OrganizationStatus.SUSPENDED);
         organizationRepository.save(organization);
 
-        log.info("[RegistryService] Cập nhật trạng thái tổ chức: code={}, {} → {}", code, current, target);
+        // Evict toàn bộ API key cache để chặn ngay mọi giao dịch của tổ chức này
+        apiKeyCacheService.evictAgencyCache(organization.getId());
 
-        return UpdateOrganizationStatusResponse.builder()
+        log.info("[RegistryService] Khóa tổ chức khẩn cấp: code={}, reason={}", code, request.getReason());
+
+        return SuspendOrganizationResponse.builder()
                 .code(organization.getCode())
                 .status(organization.getStatus())
                 .build();
@@ -253,12 +248,17 @@ public class RegistryServiceImpl implements RegistryService {
     }
 
     @Override
-    public List<ActiveOrganizationResponse> getActiveOrganizations() {
-        return organizationRepository.findByStatusOrderByNameAsc(OrganizationStatus.ACTIVE).stream()
-                .map(organization -> ActiveOrganizationResponse.builder()
-                        .code(organization.getCode())
-                        .name(organization.getName())
-                        .build())
-                .toList();
+    public Page<ActiveOrganizationResponse> getOrganizations(
+            OrganizationStatus status, String search, Pageable pageable) {
+
+        // Trim để tránh search = "" lọc sai — JPQL cần null để bỏ qua điều kiện search
+        String normalizedSearch = (search == null || search.isBlank()) ? null : search.trim();
+
+        return organizationRepository.findByFilters(status, normalizedSearch, pageable)
+                .map(org -> ActiveOrganizationResponse.builder()
+                        .code(org.getCode())
+                        .name(org.getName())
+                        .status(org.getStatus())
+                        .build());
     }
 }
