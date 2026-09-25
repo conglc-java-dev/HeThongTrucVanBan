@@ -1,5 +1,6 @@
 package com.TrucVanban.shared.config;
 
+import com.TrucVanban.infrastructure.messaging.config.RabbitMQConfig;
 import com.TrucVanban.routing.dto.request.RoutingRequest;
 import org.junit.jupiter.api.Test;
 import org.springframework.amqp.core.Message;

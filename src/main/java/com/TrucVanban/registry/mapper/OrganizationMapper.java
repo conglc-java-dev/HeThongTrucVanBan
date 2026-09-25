@@ -13,7 +13,6 @@ public interface OrganizationMapper {
 
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "status", ignore = true)
-    @Mapping(target = "rejectReason", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "updatedAt", ignore = true)
     @Mapping(target = "stampImageUrl", ignore = true)
@@ -22,8 +21,6 @@ public interface OrganizationMapper {
 
     @Mapping(source = "id", target = "organizationId")
     RegisterOrganizationResponse toRegisterResponse(Organization organization);
-
-    SuspendOrganizationResponse toSuspendResponse(Organization organization);
 
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "organizationId", ignore = true)

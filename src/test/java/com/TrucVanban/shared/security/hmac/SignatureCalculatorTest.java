@@ -1,5 +1,7 @@
 package com.TrucVanban.shared.security.hmac;
 
+import com.TrucVanban.infrastructure.security.hmac.HmacProperties;
+import com.TrucVanban.infrastructure.security.hmac.SignatureCalculator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

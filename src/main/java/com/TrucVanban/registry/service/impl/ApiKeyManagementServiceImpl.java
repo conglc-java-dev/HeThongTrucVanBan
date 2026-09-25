@@ -11,7 +11,7 @@ import com.TrucVanban.registry.repository.OrganizationRepository;
 import com.TrucVanban.registry.service.ApiKeyManagementService;
 import com.TrucVanban.shared.exception.BusinessLogicException;
 import com.TrucVanban.shared.exception.ResourceNotFoundException;
-import com.TrucVanban.shared.security.hmac.AesGcmEncryptionService;
+import com.TrucVanban.infrastructure.security.hmac.AesGcmEncryptionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;

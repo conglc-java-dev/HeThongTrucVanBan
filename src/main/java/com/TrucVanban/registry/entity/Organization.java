@@ -33,10 +33,7 @@ public class Organization {
     @Enumerated(EnumType.STRING)
     @Column(length = 20)
     @Builder.Default
-    private OrganizationStatus status = OrganizationStatus.PENDING_APPROVAL;
-
-    @Column(name = "reject_reason")
-    private String rejectReason;
+    private OrganizationStatus status = OrganizationStatus.ACTIVE;
 
     @Column(name = "stamp_image_url", length = 500)
     private String stampImageUrl;

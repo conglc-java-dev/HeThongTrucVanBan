@@ -2,17 +2,21 @@ package com.TrucVanban.registry.controller;
 
 import com.TrucVanban.registry.dto.request.*;
 import com.TrucVanban.registry.dto.response.*;
+import com.TrucVanban.registry.enums.OrganizationStatus;
 import com.TrucVanban.registry.service.RegistryService;
 import com.TrucVanban.shared.ResponseData;
 
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+
 
 @RestController
 @RequestMapping("/registry")
@@ -22,7 +26,7 @@ public class RegistryController {
         private final RegistryService registryService;
 
         @PostMapping("/organizations")
-        @Operation(summary = "Đăng ký tổ chức mới")
+        @Operation(summary = "Tạo cơ quan mới")
         public ResponseEntity<ResponseData<RegisterOrganizationResponse>> registerOrganization(
                         @Valid @RequestBody RegisterOrganizationRequest request) {
 
@@ -31,22 +35,22 @@ public class RegistryController {
                 return ResponseEntity.status(HttpStatus.CREATED).body(ResponseData
                                 .<RegisterOrganizationResponse>builder()
                                 .success(true)
-                                .message("Đăng ký thành công. Vui lòng chờ được phê duyệt.")
+                                .message("Tạo cơ quan thành công.")
                                 .data(data)
                                 .build());
         }
 
-        @PatchMapping("/organizations/{code}/status")
-        @Operation(summary = "Cập nhật trạng thái tổ chức [phê duyệt, khóa, mở khóa]")
-        public ResponseEntity<ResponseData<UpdateOrganizationStatusResponse>> updateOrganizationStatus(
+        @PutMapping("/organizations/{code}/suspend")
+        @Operation(summary = "Khóa/Đình chỉ khẩn cấp tổ chức")
+        public ResponseEntity<ResponseData<SuspendOrganizationResponse>> suspendOrganization(
                         @PathVariable String code,
-                        @Valid @RequestBody UpdateOrganizationStatusRequest request) {
+                        @Valid @RequestBody SuspendOrganizationRequest request) {
 
-                UpdateOrganizationStatusResponse data = registryService.updateOrganizationStatus(code, request);
+                SuspendOrganizationResponse data = registryService.suspendOrganization(code, request);
 
-                return ResponseEntity.ok(ResponseData.<UpdateOrganizationStatusResponse>builder()
+                return ResponseEntity.ok(ResponseData.<SuspendOrganizationResponse>builder()
                                 .success(true)
-                                .message("Cập nhật trạng thái tổ chức thành công")
+                                .message("Tổ chức đã bị khóa thành công")
                                 .data(data)
                                 .build());
         }
@@ -81,14 +85,20 @@ public class RegistryController {
                                 .build());
         }
 
-        @GetMapping("/organizations/active")
-        @Operation(summary = "Lấy danh sách cơ quan đang hoạt động để chọn nơi nhận")
-        public ResponseEntity<ResponseData<List<ActiveOrganizationResponse>>> getActiveOrganizations() {
-                List<ActiveOrganizationResponse> data = registryService.getActiveOrganizations();
+        @GetMapping("/organizations")
+        @Operation(summary = "Lấy danh sách cơ quan (hỗ trợ filter + phân trang)")
+        public ResponseEntity<ResponseData<Page<ActiveOrganizationResponse>>> getOrganizations(
+                        @RequestParam(required = false) OrganizationStatus status,
+                        @RequestParam(required = false) String search,
+                        @RequestParam(defaultValue = "0") int page,
+                        @RequestParam(defaultValue = "50") int size) {
 
-                return ResponseEntity.ok(ResponseData.<List<ActiveOrganizationResponse>>builder()
+                Page<ActiveOrganizationResponse> data = registryService.getOrganizations(
+                                status, search, PageRequest.of(page, size));
+
+                return ResponseEntity.ok(ResponseData.<Page<ActiveOrganizationResponse>>builder()
                                 .success(true)
-                                .message("Lấy danh sách cơ quan đang hoạt động thành công")
+                                .message("Lấy danh sách thành công")
                                 .data(data)
                                 .build());
         }

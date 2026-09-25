@@ -4,6 +4,9 @@ import com.TrucVanban.registry.dto.request.*;
 import com.TrucVanban.registry.dto.response.*;
 import com.TrucVanban.registry.entity.Certificate;
 import com.TrucVanban.registry.entity.Organization;
+import com.TrucVanban.registry.enums.OrganizationStatus;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 import java.util.List;
 
@@ -11,7 +14,7 @@ public interface RegistryService {
 
     RegisterOrganizationResponse registerOrganization(RegisterOrganizationRequest request);
 
-    UpdateOrganizationStatusResponse updateOrganizationStatus(String code, UpdateOrganizationStatusRequest request);
+    SuspendOrganizationResponse suspendOrganization(String code, SuspendOrganizationRequest request);
 
     UpdateEndpointResponse updateEndpoint(String code, UpdateEndpointRequest request);
 
@@ -37,5 +40,5 @@ public interface RegistryService {
 
     List<OrgVisualAssetResponse> getVisualAssets(String orgCode);
 
-    List<ActiveOrganizationResponse> getActiveOrganizations();
+    Page<ActiveOrganizationResponse> getOrganizations(OrganizationStatus status, String search, Pageable pageable);
 }
