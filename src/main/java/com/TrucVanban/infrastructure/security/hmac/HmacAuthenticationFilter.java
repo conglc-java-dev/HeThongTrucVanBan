@@ -22,7 +22,6 @@ public class HmacAuthenticationFilter extends OncePerRequestFilter {
     private static final AntPathMatcher PATH_MATCHER = new AntPathMatcher();
     private final HmacAuthenticationService hmacAuthenticationService;
     private final HmacProperties hmacProperties;
-    private final com.TrucVanban.exchange.service.AuditLogService auditLogService;
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
@@ -51,22 +50,10 @@ public class HmacAuthenticationFilter extends OncePerRequestFilter {
             hmacAuthenticationService.authenticate(requestToUse);
             filterChain.doFilter(requestToUse, response);
         } catch (HmacAuthenticationException exception) {
-            String apiKey = request.getHeader(hmacProperties.getHeader().getApiKey());
             String path = request.getServletPath();
-            
+
             log.warn("[HmacAuthenticationFilter] Xác thực thất bại cho đường dẫn={} lý do={}", path, exception.getMessage());
-            
-            //audit log cho authen failure
-            auditLogService.log(
-                    "HMAC_AUTH_FAILED",
-                    "API_KEY",
-                    apiKey != null ? apiKey : "UNKNOWN",
-                    "FAILURE",
-                    String.format("Path: %s, Reason: %s", path, exception.getClass().getSimpleName()),
-                    null,
-                    null
-            );
-            
+
             writeErrorResponse(response, determineStatus(exception), buildErrorMessage(exception));
         }
     }

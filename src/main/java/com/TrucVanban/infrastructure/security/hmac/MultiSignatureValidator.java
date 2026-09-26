@@ -1,5 +1,9 @@
 package com.TrucVanban.infrastructure.security.hmac;
 
+import com.TrucVanban.auditlog.annotation.Audited;
+import com.TrucVanban.auditlog.domain.AuditOperation;
+import com.TrucVanban.auditlog.domain.AuditTransactionMode;
+import com.TrucVanban.auditlog.resolver.MultiSignatureValidationAuditResolver;
 import com.TrucVanban.exchange.dto.request.send.SignatureRequest;
 import com.TrucVanban.registry.service.RegistryService;
 import com.TrucVanban.storage.service.MinioService;
@@ -40,8 +44,13 @@ public class MultiSignatureValidator {
     /**
      * Xác minh tất cả chữ ký trong file PDF theo storagePath.
      */
+    @Audited(
+            operation = AuditOperation.VALIDATE_MULTI_SIGNATURE,
+            resolver = MultiSignatureValidationAuditResolver.class,
+            transactionMode = AuditTransactionMode.INDEPENDENT)
     public List<SignatureVerificationResult> verifyAll(String storagePath,
-                                                       List<SignatureRequest> payloadSigs) throws IOException {
+                                                       List<SignatureRequest> payloadSigs,
+                                                       String documentCode) throws IOException {
         List<SignatureVerificationResult> results = new ArrayList<>();
 
         // Tải file PDF từ MinIO (1 lần duy nhất)

@@ -1,5 +1,12 @@
 package com.TrucVanban.exchange.service.impl;
 
+import com.TrucVanban.auditlog.annotation.Audited;
+import com.TrucVanban.auditlog.domain.AuditOperation;
+import com.TrucVanban.auditlog.resolver.AcknowledgeDocumentAuditResolver;
+import com.TrucVanban.auditlog.resolver.ExchangeDocumentAuditResolver;
+import com.TrucVanban.auditlog.resolver.MultiSignatureAuditResolver;
+import com.TrucVanban.auditlog.resolver.RecallDocumentAuditResolver;
+import com.TrucVanban.auditlog.resolver.UpdateDocumentAuditResolver;
 import com.TrucVanban.exchange.dto.request.RevokeDocumentRequest;
 import com.TrucVanban.exchange.dto.request.UpdateDocumentRequest;
 import com.TrucVanban.exchange.dto.request.receive.ReceiveDocumentRequest;
@@ -21,7 +28,6 @@ import com.TrucVanban.exchange.enums.SigningFlowStatus;
 import com.TrucVanban.exchange.enums.TransactionStatus;
 import com.TrucVanban.exchange.mapper.DocumentMapper;
 import com.TrucVanban.exchange.repository.*;
-import com.TrucVanban.exchange.service.AuditLogService;
 import com.TrucVanban.exchange.service.ExchangeService;
 import com.TrucVanban.registry.entity.Organization;
 import com.TrucVanban.registry.service.RegistryService;
@@ -75,16 +81,15 @@ public class ExchangeServiceImpl implements ExchangeService {
     DocumentReceiverRepository documentReceiverRepository;
     StatusHistoryRepository statusHistoryRepository;
     DocumentSignatureRepository documentSignatureRepository;
-    AuditLogService auditLogService;
     OutboxEventRepository outboxEventRepository;
     MultiSignatureValidator multiSignatureValidator;
     ObjectMapper objectMapper;
     StringRedisTemplate redisTemplate;
-    AuditLogRepository auditLogRepository;
     private final Object lock  = new Object();
 
     @Override
     @Transactional
+    @Audited(operation = AuditOperation.EXCHANGE_DOCUMENT, resolver = ExchangeDocumentAuditResolver.class)
     public List<ExchangeDocumentResponse> exchangeDocument(ExchangeDocumentRequest request, String idempotencyKey) {
         log.info("[exchangeDocument] Bắt đầu gửi văn bản: sender={}, receivers={}",
                 request.getSenderCode(), request.getReceiverCodes());
@@ -163,9 +168,6 @@ public class ExchangeServiceImpl implements ExchangeService {
                         .build();
                 documentReplacementRepository.save(replacement);
 
-                auditLogService.log("DOCUMENT_REPLACED", "ORGANIZATION", request.getSenderCode(), "SUCCESS",
-                        String.format("{\"oldDoc\":\"%s\",\"newDoc\":\"%s\"}", replacedDoc.getDocumentCode(), document.getDocumentCode()),
-                        null, document.getId());
             }
 
             // Tạo ExchangeTransactions cho từng receiver
@@ -282,6 +284,7 @@ public class ExchangeServiceImpl implements ExchangeService {
 
     @Override
     @Transactional
+    @Audited(operation = AuditOperation.ACKNOWLEDGE_DOCUMENT, resolver = AcknowledgeDocumentAuditResolver.class)
     public ReceiveDocumentResponse ackDocument(ReceiveDocumentRequest request) {
 
         ExchangeTransactions transaction = exchangeTransactionsRepository
@@ -313,12 +316,6 @@ public class ExchangeServiceImpl implements ExchangeService {
 
         transaction.setCurrentStatus(TransactionStatus.DELIVERED);
         exchangeTransactionsRepository.save(transaction);
-
-        // Ghi audit log ACK
-        auditLogService.log("ACK_RECEIVED", "ORGANIZATION", request.getReceiverCode(), "SUCCESS",
-                String.format("{\"transactionCode\":\"%s\",\"businessStatusCode\":\"%s\"}",
-                        request.getTransactionCode(), request.getBusinessStatusCode()),
-                transaction.getId(), transaction.getDocumentId());
 
         return ReceiveDocumentResponse.builder()
                 .transactionCode(request.getTransactionCode())
@@ -430,6 +427,7 @@ public class ExchangeServiceImpl implements ExchangeService {
 
     @Override
     @Transactional
+    @Audited(operation = AuditOperation.RECALL_DOCUMENT, resolver = RecallDocumentAuditResolver.class)
     public RevokeDocumentResponse revokeDocument(String documentCode, RevokeDocumentRequest request) {
         log.info("[revokeDocument] Thu hồi văn bản: documentCode={}, requester={}", documentCode, request.getRequesterCode());
         Document document = documentRepository.findByDocumentCode(documentCode)
@@ -461,10 +459,6 @@ public class ExchangeServiceImpl implements ExchangeService {
                 .build();
         exchangeTransactionsRepository.save(revokeTxn);
 
-        auditLogService.log("DOCUMENT_REVOKED", "ORGANIZATION", request.getRequesterCode(), "SUCCESS",
-                String.format("{\"documentCode\":\"%s\",\"reason\":\"%s\",\"transactionCode\":\"%s\"}", documentCode, request.getReason(), transactionCode),
-                null, document.getId());
-
         log.info("[revokeDocument] Thu hồi văn bản thành công: documentCode={}, txn={}", documentCode, transactionCode);
         return RevokeDocumentResponse.builder()
                 .transactionCode(transactionCode)
@@ -479,7 +473,6 @@ public class ExchangeServiceImpl implements ExchangeService {
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy văn bản: " + documentCode));
         List<DocumentVersion> versions = documentVersionRepository.findAllByDocumentIdOrderByVersionNoAsc(document.getId());
         List<DocumentReplacement> replacements = documentReplacementRepository.findAllRelatedByDocumentId(document.getId());
-        List<AuditLog> auditLogs = auditLogRepository.findByDocumentIdOrderByCreatedAtDesc(document.getId());
         List<DocumentDetailResponse.VersionResponse> versionResponses = versions.stream()
                 .map(v -> DocumentDetailResponse.VersionResponse.builder()
                         .versionNo(v.getVersionNo()).storagePath(v.getStoragePath())
@@ -493,22 +486,17 @@ public class ExchangeServiceImpl implements ExchangeService {
                     .replacementDocumentCode(replacementCode).replacedDocumentCode(replacedCode)
                     .reason(r.getReason()).createdAt(r.getCreatedAt()).build();
         }).toList();
-        List<DocumentDetailResponse.AuditResponse> auditResponses = auditLogs.stream()
-                .map(a -> DocumentDetailResponse.AuditResponse.builder()
-                        .action(a.getAction()).actorType(a.getActorType()).actorId(a.getActorId())
-                        .result(a.getResult()).detail(a.getDetail() != null ? a.getDetail().toString() : null)
-                        .createdAt(a.getCreatedAt()).build())
-                .toList();
         return DocumentDetailResponse.builder()
                 .documentCode(document.getDocumentCode()).title(document.getTitle())
                 .summary(document.getSummary()).documentType(document.getDocumentType())
                 .extractedMetadata(document.getExtractedMetadata()).senderOrgId(document.getSenderOrgId())
                 .status(document.getStatus()).currentVersion(document.getCurrentVersion())
-                .versions(versionResponses).historyVersions(versionResponses).replacements(replacementResponses).auditLogs(auditResponses).build();
+                .versions(versionResponses).historyVersions(versionResponses).replacements(replacementResponses).build();
     }
 
     @Override
     @Transactional
+    @Audited(operation = AuditOperation.UPDATE_DOCUMENT, resolver = UpdateDocumentAuditResolver.class)
     public void updateDocument(String documentCode, UpdateDocumentRequest request) {
         log.info("[updateDocument] Cập nhật văn bản: documentCode={}, requester={}", documentCode, request.getRequesterCode());
         Document document = documentRepository.findByDocumentCode(documentCode)
@@ -554,14 +542,12 @@ public class ExchangeServiceImpl implements ExchangeService {
         log.info("[updateDocument] Tạo version mới: versionNo={}, documentCode={}", newVersionNo, documentCode);
 
         documentRepository.save(document);
-        auditLogService.log("DOCUMENT_UPDATED", "ORGANIZATION", request.getRequesterCode(), "SUCCESS",
-                String.format("{\"documentCode\":\"%s\",\"updateReason\":\"%s\"}", documentCode, reason),
-                null, document.getId());
         log.info("[updateDocument] Cập nhật văn bản thành công: documentCode={}", documentCode);
     }
 
     @Override
     @Transactional
+    @Audited(operation = AuditOperation.PROCESS_MULTI_SIGNATURE, resolver = MultiSignatureAuditResolver.class)
     public MultiSignatureResponse processMultiSignatureDocument(MultiSignatureRequest request, String idempotencyKey) {
         log.info("[MultiSig] Bắt đầu xử lý: masterTxCode={}, sender={}, sigs={}",
                 request.getMasterTransactionCode(), request.getCurrentSenderCode(),
@@ -585,7 +571,8 @@ public class ExchangeServiceImpl implements ExchangeService {
             // ---- Tầng 2: Document Layer – Xác minh PDF và chữ ký ----
             List<SignatureVerificationResult> verificationResults;
             try {
-                verificationResults = multiSignatureValidator.verifyAll(request.getStoragePath(), request.getSignatures());
+                verificationResults = multiSignatureValidator.verifyAll(
+                        request.getStoragePath(), request.getSignatures(), request.getDocumentCode());
             } catch (java.io.IOException e) {
                 log.error("[MultiSig] Không thể tải file PDF từ MinIO: storagePath={}, error={}",
                         request.getStoragePath(), e.getMessage(), e);

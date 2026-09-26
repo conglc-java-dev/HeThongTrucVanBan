@@ -1,0 +1,13 @@
+package com.TrucVanban.auditlog.domain;
+
+public enum AuditOperation {
+    EXCHANGE_DOCUMENT,
+    ACKNOWLEDGE_DOCUMENT,
+    RECALL_DOCUMENT,
+    UPDATE_DOCUMENT,
+    INIT_RECALL_ACTION,
+    INIT_UPDATE_ACTION,
+    PROCESS_MULTI_SIGNATURE,
+    VALIDATE_MULTI_SIGNATURE
+}
+
