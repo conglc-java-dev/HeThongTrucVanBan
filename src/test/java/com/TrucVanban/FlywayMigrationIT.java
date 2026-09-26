@@ -14,7 +14,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * IT-01: Xác minh toàn bộ Flyway migration schema chạy thành công trên PostgreSQL thật.
  *
  * <p>Đây là bài test NỀN TẢNG quan trọng nhất. Nếu bất kỳ migration nào trong
- * V1__init_schema.sql đến V15__add_issued_date_to_documents.sql có lỗi cú pháp
+ * V1__init_schema.sql đến V17__backfill_audit_log_reference_codes.sql có lỗi cú pháp
  * hoặc xung đột kiểu dữ liệu, bài test này sẽ fail TRƯỚC KHI bất kỳ IT nào khác chạy,
  * tránh lãng phí thời gian debug những lỗi gây ra bởi schema không hợp lệ.
  */
@@ -27,7 +27,7 @@ class FlywayMigrationIT extends BaseIT {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
-    // Danh sách bảng cốt lõi cần tồn tại sau khi migrate V1 đến V15
+    // Danh sách bảng cốt lõi cần tồn tại sau khi migrate V1 đến V17
     private static final List<String> EXPECTED_TABLES = List.of(
             "organizations",
             "certificates",
@@ -36,6 +36,7 @@ class FlywayMigrationIT extends BaseIT {
             "document_versions",
             "exchange_transactions",
             "status_histories",
+            "audit_logs",
             "outbox_event",
             "failed_messages",
             "api_keys",
@@ -45,18 +46,18 @@ class FlywayMigrationIT extends BaseIT {
     );
 
     /**
-     * Kiểm tra tất cả migration từ V1 đến V15 đều được apply thành công
+     * Kiểm tra tất cả migration từ V1 đến V17 đều được apply thành công
      * (không có migration nào ở trạng thái FAILED).
      */
     @Test
-    @DisplayName("Tất cả migration V1→V15 phải apply thành công, không có migration nào FAILED")
+    @DisplayName("Tất cả migration V1→V17 phải apply thành công, không có migration nào FAILED")
     void allMigrationsApplySuccessfully() {
         var appliedMigrations = flyway.info().applied();
 
-        // Phải có ít nhất 15 migration đã được apply
+        // Phải có ít nhất 17 migration đã được apply
         assertThat(appliedMigrations)
-                .as("Phải có ít nhất 15 migration được apply")
-                .hasSizeGreaterThanOrEqualTo(15);
+                .as("Phải có ít nhất 17 migration được apply")
+                .hasSizeGreaterThanOrEqualTo(17);
 
         // Không có migration nào ở trạng thái FAILED
         var failedMigrations = java.util.Arrays.stream(appliedMigrations)
@@ -88,19 +89,19 @@ class FlywayMigrationIT extends BaseIT {
     }
 
     /**
-     * Kiểm tra version migration cuối cùng đúng là V15 và trạng thái là SUCCESS.
+     * Kiểm tra version migration cuối cùng đúng là V17 và trạng thái là SUCCESS.
      * Bảo vệ chống lại việc ai đó tạo migration mới mà quên update test này.
      */
     @Test
-    @DisplayName("Version migration cuối cùng phải là V15 với trạng thái SUCCESS")
-    void latestMigrationVersionIsV15() {
+    @DisplayName("Version migration cuối cùng phải là V17 với trạng thái SUCCESS")
+    void latestMigrationVersionIsV17() {
         String latestVersion = jdbcTemplate.queryForObject(
                 "SELECT version FROM flyway_schema_history " +
                 "WHERE success = true ORDER BY installed_rank DESC LIMIT 1",
                 String.class
         );
         assertThat(latestVersion)
-                .as("Version migration mới nhất được apply thành công phải là 15")
-                .isEqualTo("15");
+                .as("Version migration mới nhất được apply thành công phải là 17")
+                .isEqualTo("17");
     }
 }

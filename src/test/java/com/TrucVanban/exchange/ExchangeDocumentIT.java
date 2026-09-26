@@ -102,11 +102,11 @@ class ExchangeDocumentIT extends BaseIT {
         jdbcTemplate.execute("DELETE FROM outbox_event WHERE aggregate_type = 'EXCHANGE_TRANSACTION'");
         jdbcTemplate.execute("DELETE FROM status_histories WHERE transaction_id IN (SELECT id FROM exchange_transactions WHERE document_id IN (SELECT id FROM documents WHERE document_code LIKE 'IT-DOC-%'))");
         jdbcTemplate.execute("DELETE FROM document_signatures WHERE transaction_id IN (SELECT id FROM exchange_transactions WHERE document_id IN (SELECT id FROM documents WHERE document_code LIKE 'IT-DOC-%'))");
+        jdbcTemplate.execute("DELETE FROM audit_logs WHERE document_id IN (SELECT id FROM documents WHERE document_code LIKE 'IT-DOC-%') OR transaction_id IN (SELECT id FROM exchange_transactions WHERE document_id IN (SELECT id FROM documents WHERE document_code LIKE 'IT-DOC-%'))");
         jdbcTemplate.execute("DELETE FROM exchange_transactions WHERE document_id IN (SELECT id FROM documents WHERE document_code LIKE 'IT-DOC-%')");
         jdbcTemplate.execute("DELETE FROM document_receivers WHERE document_id IN (SELECT id FROM documents WHERE document_code LIKE 'IT-DOC-%')");
         jdbcTemplate.execute("DELETE FROM document_versions WHERE document_id IN (SELECT id FROM documents WHERE document_code LIKE 'IT-DOC-%')");
         jdbcTemplate.execute("DELETE FROM document_actions WHERE document_id IN (SELECT id FROM documents WHERE document_code LIKE 'IT-DOC-%')");
-        jdbcTemplate.execute("DELETE FROM audit_logs WHERE document_id IN (SELECT id FROM documents WHERE document_code LIKE 'IT-DOC-%')");
         jdbcTemplate.execute("DELETE FROM documents WHERE document_code LIKE 'IT-DOC-%'");
 
         var idKeys = redisTemplate.keys("idempotency:exchange-document:*");
