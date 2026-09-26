@@ -22,7 +22,6 @@ public class DocumentDetailResponse {
     private List<VersionResponse> versions;
     private List<VersionResponse> historyVersions;
     private List<ReplacementRelationResponse> replacements;
-    private List<AuditResponse> auditLogs;
 
     @Data @Builder
     public static class VersionResponse {
@@ -40,16 +39,6 @@ public class DocumentDetailResponse {
         private String replacementDocumentCode;
         private String replacedDocumentCode;
         private String reason;
-        private LocalDateTime createdAt;
-    }
-
-    @Data @Builder
-    public static class AuditResponse {
-        private String action;
-        private String actorType;
-        private String actorId;
-        private String result;
-        private String detail;
         private LocalDateTime createdAt;
     }
 }

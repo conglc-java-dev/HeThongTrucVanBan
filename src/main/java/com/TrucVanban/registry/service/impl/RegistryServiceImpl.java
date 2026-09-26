@@ -28,11 +28,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-import com.TrucVanban.registry.enums.OrganizationStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
@@ -198,6 +198,28 @@ public class RegistryServiceImpl implements RegistryService {
         Organization organization = organizationRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy tổ chức với id: " + id));
         return organization.getName();
+    }
+
+    @Override
+    public Map<String, String> getOrganizationNamesByCodes(Collection<String> codes) {
+        if (codes == null || codes.isEmpty()) return Map.of();
+        List<String> uniqueCodes = codes.stream()
+                .filter(code -> code != null && !code.isBlank())
+                .distinct()
+                .toList();
+        return organizationRepository.findByCodeIn(uniqueCodes).stream()
+                .collect(LinkedHashMap::new,
+                        (names, organization) -> names.put(organization.getCode(), organization.getName()),
+                        Map::putAll);
+    }
+
+    @Override
+    public Map<Long, String> getOrganizationNamesByIds(Collection<Long> ids) {
+        if (ids == null || ids.isEmpty()) return Map.of();
+        return organizationRepository.findAllById(ids).stream()
+                .collect(LinkedHashMap::new,
+                        (names, organization) -> names.put(organization.getId(), organization.getName()),
+                        Map::putAll);
     }
 
     @Override

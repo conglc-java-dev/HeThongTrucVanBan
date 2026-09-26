@@ -1,6 +1,5 @@
 package com.TrucVanban.infrastructure.security.filter;
 
-import com.TrucVanban.exchange.service.AuditLogService;
 import com.TrucVanban.registry.service.RegistryService;
 import com.TrucVanban.shared.utils.CanonicalStringBuilder;
 import com.TrucVanban.shared.utils.SignatureVerifier;
@@ -48,7 +47,6 @@ public class SignatureVerificationFilter extends OncePerRequestFilter {
     private static final AntPathMatcher PATH_MATCHER = new AntPathMatcher();
 
     private final RegistryService registryService;
-    private final AuditLogService auditLogService;
     private final ObjectMapper objectMapper;
     private final CanonicalStringBuilder canonicalStringBuilder;
 
@@ -105,13 +103,11 @@ public class SignatureVerificationFilter extends OncePerRequestFilter {
         String serialNumber = getLastSignatureSerial(body);
 
         log.info("[SignatureFilter-MultiSig] Bắt đầu xác minh: sender={}, serial={}", senderCode, serialNumber);
-        if (!checkTimestamp(response, senderCode, serialNumber, timestampStr)) return;
+        if (!checkTimestamp(response, senderCode, timestampStr)) return;
 
         var certificate = registryService.findActiveCertificateBySerialNumber(serialNumber);
         if (certificate == null) {
             log.warn("[SignatureFilter-MultiSig] [Chốt 2] Không tìm thấy chứng thư: serialNumber={}", serialNumber);
-            auditLogService.log("CERT_NOT_FOUND", "ORGANIZATION", senderCode, "FAILURE",
-                    buildDetail("Không tìm thấy chứng thư ACTIVE. serialNumber=" + serialNumber, serialNumber, null), null, null);
             writeErrorResponse(response, HttpStatus.UNAUTHORIZED,
                     "Chứng thư số không hợp lệ hoặc đã hết hạn.");
             return;
@@ -135,17 +131,12 @@ public class SignatureVerificationFilter extends OncePerRequestFilter {
 
             if (!isValid) {
                 log.warn("[SignatureFilter-MultiSig] [Chốt 3] TRANSPORT SIGNATURE KHÔNG HỢP LỆ! sender={}", senderCode);
-                auditLogService.log("SIGNATURE_INVALID", "ORGANIZATION", senderCode, "FAILURE",
-                        buildDetail("Transport signature không hợp lệ — gói tin có thể bị MITM.",
-                                serialNumber, canonicalString), null, null);
                 writeErrorResponse(response, HttpStatus.UNAUTHORIZED,
                         "Xác minh transport signature thất bại. Gói tin không toàn vẹn.");
                 return;
             }
 
             log.info("[SignatureFilter-MultiSig] [Chốt 3] OK — Transport signature hợp lệ. sender={}", senderCode);
-            auditLogService.log("TRANSPORT_SIGNATURE_VERIFIED", "ORGANIZATION", senderCode, "SUCCESS",
-                    buildDetail("Transport signature hợp lệ. Tầng 1 vượt qua.", serialNumber, canonicalString), null, null);
 
             CachedBodyRequestWrapper cachedRequest = new CachedBodyRequestWrapper(request, bodyBytes);
             cachedRequest.setAttribute("verified_org_id", certificate.getOrganizationId());
@@ -181,7 +172,7 @@ public class SignatureVerificationFilter extends OncePerRequestFilter {
         log.info("[SignatureFilter-Legacy] Bắt đầu xác minh gói tin: sender={}, serial={}", senderCode, serialNumber);
 
         // CHỐT 1: Anti-Replay
-        if (!checkTimestamp(response, senderCode, serialNumber, timestampStr)) return;
+        if (!checkTimestamp(response, senderCode, timestampStr)) return;
 
         // CHỐT 2: Certificate Lookup
         if (serialNumber == null || serialNumber.isBlank()) {
@@ -192,8 +183,6 @@ public class SignatureVerificationFilter extends OncePerRequestFilter {
         var certificate = registryService.findActiveCertificateBySerialNumber(serialNumber);
         if (certificate == null) {
             log.warn("[SignatureFilter-Legacy] [Chốt 2] Không tìm thấy chứng thư: serialNumber={}", serialNumber);
-            auditLogService.log("CERT_NOT_FOUND", "ORGANIZATION", senderCode, "FAILURE",
-                    buildDetail("Không tìm thấy chứng thư ACTIVE. serialNumber=" + serialNumber, serialNumber, null), null, null);
             writeErrorResponse(response, HttpStatus.UNAUTHORIZED,
                     "Chứng thư số không hợp lệ hoặc đã hết hạn.");
             return;
@@ -214,15 +203,10 @@ public class SignatureVerificationFilter extends OncePerRequestFilter {
 
         if (!isValid) {
             log.warn("[SignatureFilter-Legacy] [Chốt 3] CHỮ KÝ KHÔNG HỢP LỆ! sender={}", senderCode);
-            auditLogService.log("SIGNATURE_INVALID", "ORGANIZATION", senderCode, "FAILURE",
-                    buildDetail("Chữ ký không hợp lệ.", serialNumber, canonicalString), null, null);
             writeErrorResponse(response, HttpStatus.UNAUTHORIZED,
                     "Xác minh chữ ký số thất bại.");
             return;
         }
-
-        auditLogService.log("SIGNATURE_VERIFIED", "ORGANIZATION", senderCode, "SUCCESS",
-                buildDetail("Xác minh chữ ký thành công.", serialNumber, canonicalString), null, null);
 
         CachedBodyRequestWrapper cachedRequest = new CachedBodyRequestWrapper(request, bodyBytes);
         cachedRequest.setAttribute("verified_org_id", certificate.getOrganizationId());
@@ -231,11 +215,9 @@ public class SignatureVerificationFilter extends OncePerRequestFilter {
     }
 
     private boolean checkTimestamp(HttpServletResponse response, String senderCode,
-                                    String serialNumber, String timestampStr) throws IOException {
+                                   String timestampStr) throws IOException {
         if (timestampStr == null || timestampStr.isBlank()) {
             log.warn("[SignatureFilter] [Chốt 1] Thiếu trường timestamp. sender={}", senderCode);
-            auditLogService.log("SIGNATURE_REJECTED", "SYSTEM", senderCode, "FAILURE",
-                    buildDetail("Thiếu trường timestamp", serialNumber, null), null, null);
             writeErrorResponse(response, HttpStatus.BAD_REQUEST,
                     "Trường timestamp/requestTimestamp là bắt buộc.");
             return false;
@@ -244,8 +226,6 @@ public class SignatureVerificationFilter extends OncePerRequestFilter {
         try {
             packetTime = OffsetDateTime.parse(timestampStr);
         } catch (Exception e) {
-            auditLogService.log("REPLAY_ATTACK_TIMESTAMP_INVALID", "SYSTEM", senderCode, "FAILURE",
-                    buildDetail("Timestamp không đúng định dạng: " + timestampStr, serialNumber, null), null, null);
             writeErrorResponse(response, HttpStatus.BAD_REQUEST, "Timestamp không đúng định dạng ISO 8601.");
             return false;
         }
@@ -253,9 +233,6 @@ public class SignatureVerificationFilter extends OncePerRequestFilter {
         long diffMinutes = Math.abs(Duration.between(packetTime, serverTime).toMinutes());
         if (diffMinutes > MAX_TIME_DIFF_MINUTES) {
             log.warn("[SignatureFilter] [Chốt 1] REPLAY ATTACK! sender={}, drift={}m", senderCode, diffMinutes);
-            auditLogService.log("REPLAY_ATTACK_DETECTED", "ORGANIZATION", senderCode, "FAILURE",
-                    buildDetail(String.format("Lệch thời gian %dm (max %dm)", diffMinutes, MAX_TIME_DIFF_MINUTES),
-                            serialNumber, null), null, null);
             writeErrorResponse(response, HttpStatus.REQUEST_TIMEOUT,
                     String.format("Replay Attack phát hiện. Lệch %d phút (giới hạn %d phút).",
                             diffMinutes, MAX_TIME_DIFF_MINUTES));
@@ -300,18 +277,6 @@ public class SignatureVerificationFilter extends OncePerRequestFilter {
             receiversNode.forEach(r -> result.add(r.asText()));
         }
         return result;
-    }
-
-    private String buildDetail(String message, String serialNumber, String canonicalString) {
-        try {
-            var map = new java.util.LinkedHashMap<String, String>();
-            map.put("message", message);
-            if (serialNumber != null) map.put("certificateSerialNumber", serialNumber);
-            if (canonicalString != null) map.put("canonicalString", canonicalString);
-            return objectMapper.writeValueAsString(map);
-        } catch (Exception e) {
-            return "{\"message\":\"" + message + "\"}";
-        }
     }
 
     private void writeErrorResponse(HttpServletResponse response,

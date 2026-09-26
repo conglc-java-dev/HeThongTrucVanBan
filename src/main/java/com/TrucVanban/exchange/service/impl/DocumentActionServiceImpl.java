@@ -1,5 +1,8 @@
 package com.TrucVanban.exchange.service.impl;
 
+import com.TrucVanban.auditlog.annotation.Audited;
+import com.TrucVanban.auditlog.domain.AuditOperation;
+import com.TrucVanban.auditlog.resolver.DocumentActionAuditResolver;
 import com.TrucVanban.exchange.dto.request.action.InitRecallActionRequest;
 import com.TrucVanban.exchange.dto.request.action.InitUpdateActionRequest;
 import com.TrucVanban.exchange.dto.response.DocumentActionResponse;
@@ -9,7 +12,6 @@ import com.TrucVanban.exchange.entity.ExchangeTransactions;
 import com.TrucVanban.exchange.repository.DocumentRepository;
 import com.TrucVanban.exchange.repository.DocumentVersionRepository;
 import com.TrucVanban.exchange.repository.ExchangeTransactionsRepository;
-import com.TrucVanban.exchange.service.AuditLogService;
 import com.TrucVanban.exchange.service.DocumentActionService;
 import com.TrucVanban.registry.service.RegistryService;
 import com.TrucVanban.shared.exception.ForbiddenException;
@@ -33,10 +35,9 @@ public class DocumentActionServiceImpl implements DocumentActionService {
     ExchangeTransactionsRepository exchangeTransactionsRepository;
     DocumentVersionRepository documentVersionRepository;
     RegistryService registryService;
-    AuditLogService auditLogService;
-
     @Override
     @Transactional
+    @Audited(operation = AuditOperation.INIT_RECALL_ACTION, resolver = DocumentActionAuditResolver.class)
     public DocumentActionResponse initRecallAction(InitRecallActionRequest request) {
         log.info("[initRecallAction] Khởi tạo chiến dịch thu hồi: recalledDoc={}, actionDoc={}, requester={}",
                 request.getRecalledDocumentCode(), request.getActionDocumentCode(), request.getRequestedByCode());
@@ -54,11 +55,6 @@ public class DocumentActionServiceImpl implements DocumentActionService {
 
         Long actionId = System.currentTimeMillis() % 10000;
 
-        auditLogService.log("RECALL_CAMPAIGN_INITIATED", "ORGANIZATION", request.getRequestedByCode(), "SUCCESS",
-                String.format("{\"actionId\":%d,\"recalledDoc\":\"%s\",\"actionDoc\":\"%s\",\"reason\":\"%s\"}",
-                        actionId, request.getRecalledDocumentCode(), request.getActionDocumentCode(), request.getReason()),
-                null, recalledDoc.getId());
-
         return DocumentActionResponse.builder()
                 .actionId(actionId)
                 .actionStatus("PENDING")
@@ -68,6 +64,7 @@ public class DocumentActionServiceImpl implements DocumentActionService {
 
     @Override
     @Transactional
+    @Audited(operation = AuditOperation.INIT_UPDATE_ACTION, resolver = DocumentActionAuditResolver.class)
     public DocumentActionResponse initUpdateAction(InitUpdateActionRequest request) {
         log.info("[initUpdateAction] Khởi tạo lệnh cập nhật văn bản: targetDoc={}, requester={}",
                 request.getTargetDocumentCode(), request.getRequestedByCode());
@@ -106,11 +103,6 @@ public class DocumentActionServiceImpl implements DocumentActionService {
         }
 
         Long actionId = System.currentTimeMillis() % 10000;
-
-        auditLogService.log("UPDATE_ACTION_INITIATED", "ORGANIZATION", request.getRequestedByCode(), "SUCCESS",
-                String.format("{\"actionId\":%d,\"targetDoc\":\"%s\",\"reason\":\"%s\"}",
-                        actionId, request.getTargetDocumentCode(), request.getReason()),
-                null, targetDoc.getId());
 
         return DocumentActionResponse.builder()
                 .actionId(actionId)

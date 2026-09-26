@@ -3,18 +3,18 @@ package com.TrucVanban.shared.exception;
 
 import com.TrucVanban.shared.ResponseData;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.access.AccessDeniedException;
 
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
-
-import java.nio.file.AccessDeniedException;
 
 @Slf4j
 @RestControllerAdvice
@@ -149,6 +149,19 @@ public class GlobalException {
                 .build();
         log.error("RESPONSE: {} - {}", response, e.getMessage());
         return ResponseEntity.badRequest().body(response);
+    }
+
+    @ExceptionHandler(value = ConstraintViolationException.class)
+    public ResponseEntity<?> constraintViolationException(ConstraintViolationException e) {
+        String message = e.getConstraintViolations().stream()
+                .findFirst()
+                .map(violation -> violation.getMessage())
+                .orElse("Dữ liệu không hợp lệ.");
+        return ResponseEntity.badRequest().body(ResponseData.<Void>builder()
+                .success(false)
+                .message(message)
+                .data(null)
+                .build());
     }
 
     @ExceptionHandler(value = AccessDeniedException.class)
