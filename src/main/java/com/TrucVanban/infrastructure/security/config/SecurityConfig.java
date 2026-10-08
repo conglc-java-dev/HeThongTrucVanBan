@@ -2,7 +2,6 @@ package com.TrucVanban.infrastructure.security.config;
 
 import com.TrucVanban.auth.enums.UserStatus;
 import com.TrucVanban.auth.repository.UserRepository;
-import com.TrucVanban.exchange.service.AuditLogService;
 import com.TrucVanban.infrastructure.security.filter.SignatureVerificationFilter;
 import com.TrucVanban.infrastructure.security.hmac.HmacAuthenticationFilter;
 import com.TrucVanban.infrastructure.security.hmac.HmacAuthenticationService;
@@ -51,19 +50,17 @@ public class SecurityConfig {
     @Bean
     public SignatureVerificationFilter signatureVerificationFilter(
             RegistryService registryService,
-            AuditLogService auditLogService,
             ObjectMapper objectMapper,
             CanonicalStringBuilder canonicalStringBuilder) {
 
-        return new SignatureVerificationFilter(registryService, auditLogService, objectMapper, canonicalStringBuilder);
+        return new SignatureVerificationFilter(registryService, objectMapper, canonicalStringBuilder);
     }
 
     @Bean
     public HmacAuthenticationFilter hmacAuthenticationFilter(
             HmacAuthenticationService hmacAuthenticationService,
-            HmacProperties hmacProperties,
-            AuditLogService auditLogService) {
-        return new HmacAuthenticationFilter(hmacAuthenticationService, hmacProperties, auditLogService);
+            HmacProperties hmacProperties) {
+        return new HmacAuthenticationFilter(hmacAuthenticationService, hmacProperties);
     }
 
     @Bean
@@ -86,6 +83,7 @@ public class SecurityConfig {
                                 "/registry/**", //temp
                                 "/mock/**",
                                 "/exchange",
+                                "/audit-logs/**",
                                 "/exchange-documents/signatures"  // Đa chữ ký — xác thực qua Filter 2 tầng
                         ).permitAll()
                         .anyRequest().authenticated()

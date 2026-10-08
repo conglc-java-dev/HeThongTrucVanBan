@@ -81,10 +81,8 @@ class ExchangeServiceImplTest {
     @Mock private DocumentReplacementRepository documentReplacementRepository;
     @Mock private DocumentReceiverRepository documentReceiverRepository;
     @Mock private StatusHistoryRepository statusHistoryRepository;
-    @Mock private AuditLogService auditLogService;
     @Mock private OutboxEventRepository outboxEventRepository;
     @Mock private MultiSignatureValidator multiSignatureValidator;
-    @Mock private AuditLogRepository auditLogRepository;
     @Mock private StringRedisTemplate redisTemplate;
     @Mock private ValueOperations<String, String> valueOperations;
 

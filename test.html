@@ -1279,6 +1279,336 @@
         grid-template-columns: 1fr;
       }
     }
+
+    /* AUDIT TIMELINE */
+    .audit-filter {
+      display: grid;
+      grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr) 150px auto;
+      gap: 10px;
+      align-items: end;
+    }
+
+    .audit-step {
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      background: var(--surface);
+    }
+
+    .audit-document-flow {
+      padding: 0;
+      overflow: hidden;
+    }
+
+    .audit-flow-section {
+      padding: 20px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .audit-flow-section:last-child {
+      border-bottom: 0;
+    }
+
+    .audit-section-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+      color: var(--text);
+      font-size: 13px;
+    }
+
+    .audit-section-title span {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 400;
+    }
+
+    .audit-general-line {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 10px;
+      line-height: 1.5;
+    }
+
+    .audit-general-line > span {
+      min-width: 145px;
+      color: var(--muted);
+    }
+
+    .audit-flow {
+      display: flex;
+      gap: 10px;
+      overflow-x: auto;
+      padding: 14px 0 4px;
+    }
+
+    .audit-progress-track {
+      width: 100%;
+      height: 9px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #252a3a;
+    }
+
+    .audit-progress-fill {
+      width: 0;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--accent), var(--green));
+      transition: width .25s ease;
+    }
+
+    .audit-progress-fill.rejected {
+      background: var(--red);
+    }
+
+    .audit-step {
+      min-width: 190px;
+      padding: 12px;
+      text-align: center;
+    }
+
+    .audit-step-icon {
+      font-size: 22px;
+      margin-bottom: 6px;
+    }
+
+    .audit-arrow {
+      align-self: center;
+      color: var(--accent);
+      font-size: 22px;
+      flex: 0 0 auto;
+    }
+
+    .audit-step.completed { border-color: var(--green); }
+    .audit-step.current { border-color: var(--yellow); }
+    .audit-step.rejected { border-color: var(--red); }
+
+    .audit-step-status,
+    .audit-status {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .audit-status.success,
+    .audit-step-status.completed { color: #86efac; background: #14532d; }
+    .audit-status.rejected,
+    .audit-step-status.current { color: #fde68a; background: #713f12; }
+    .audit-status.failure,
+    .audit-step-status.rejected { color: #fecaca; background: #7f1d1d; }
+    .audit-status.unknown,
+    .audit-step-status.pending { color: var(--muted); background: #253044; }
+
+    .audit-receivers {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .audit-chip {
+      padding: 6px 10px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      color: var(--text);
+      background: var(--surface);
+      font-size: 12px;
+    }
+
+    .audit-flow-connector {
+      height: 34px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      color: var(--accent);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .audit-flow-connector span {
+      width: 24px;
+      height: 24px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: #0d1f3c;
+    }
+
+    .audit-events {
+      position: relative;
+      padding-left: 34px;
+    }
+
+    .audit-events::before {
+      content: '';
+      display: none;
+      position: absolute;
+      top: 8px;
+      bottom: 12px;
+      left: 9px;
+      width: 2px;
+      background: var(--border);
+    }
+
+    .audit-events.has-events::before {
+      display: block;
+    }
+
+    .audit-event {
+      position: relative;
+      padding: 0 0 24px 8px;
+    }
+
+    .audit-event::before {
+      content: '';
+      position: absolute;
+      top: 6px;
+      left: -31px;
+      width: 12px;
+      height: 12px;
+      border: 3px solid var(--surface);
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent);
+    }
+
+    .audit-event.success::before { background: var(--green); box-shadow: 0 0 0 2px var(--green); }
+    .audit-event.rejected::before { background: var(--yellow); box-shadow: 0 0 0 2px var(--yellow); }
+    .audit-event.failure::before { background: var(--red); box-shadow: 0 0 0 2px var(--red); }
+
+    .audit-event:last-child {
+      padding-bottom: 4px;
+    }
+
+    .audit-event-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+    }
+
+    .audit-event-meta {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.7;
+      margin-top: 8px;
+    }
+
+    .audit-event-description {
+      margin-top: 8px;
+      color: var(--text);
+      line-height: 1.5;
+    }
+
+    .audit-document-group {
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      background: #151824;
+      overflow: hidden;
+      margin-bottom: 12px;
+    }
+
+    .audit-document-group summary {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 14px 16px;
+      cursor: pointer;
+      list-style: none;
+      background: #1c2030;
+    }
+
+    .audit-document-group summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .audit-group-title {
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .audit-group-subtitle {
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .audit-group-events {
+      padding: 4px 16px 6px;
+    }
+
+    .audit-group-event {
+      padding: 14px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .audit-group-event:last-child {
+      border-bottom: 0;
+    }
+
+    .audit-route {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 9px 0 6px;
+      font-size: 13px;
+    }
+
+    .audit-route-node {
+      padding: 6px 9px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface);
+    }
+
+    .audit-route-arrow {
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    .audit-group-action {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-top: 8px;
+    }
+
+    .audit-pagination {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    @media (max-width: 850px) {
+      .audit-filter {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    @media (max-width: 600px) {
+      .audit-filter {
+        grid-template-columns: 1fr;
+      }
+
+      .audit-general-line {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .audit-document-group summary,
+      .audit-group-action {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+    }
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
   <script>
@@ -1295,6 +1625,7 @@
       <button class="tab" onclick="switchPage('page-single')">Ky Don</button>
       <button class="tab" onclick="switchPage('page-multi')">Ky Noi</button>
       <button class="tab" onclick="switchPage('page-history')">Lich Su Giao Dich</button>
+      <button class="tab" onclick="switchPage('page-audit')">Audit Timeline</button>
     </div>
     <span class="env-badge">&#9679; DEV / TEST</span>
   </nav>
@@ -1353,9 +1684,11 @@
               <div class="fg">
                 <label>Cac co quan nhan <span class="req">*</span></label>
                 <div class="recipient-picker">
-                  <input id="s-receiver-search" type="search" class="recipient-search" placeholder="Tim theo ten hoac ma co quan..." oninput="filterRecipientOptions('single')">
+                  <input id="s-receiver-search" type="search" class="recipient-search"
+                    placeholder="Tim theo ten hoac ma co quan..." oninput="filterRecipientOptions('single')">
                   <select id="s-receiver-picker" size="5" aria-label="Tim va chon co quan nhan"></select>
-                  <button type="button" class="btn btn-ghost btn-sm" onclick="addRecipient('single')">+ Them co quan</button>
+                  <button type="button" class="btn btn-ghost btn-sm" onclick="addRecipient('single')">+ Them co
+                    quan</button>
                 </div>
                 <div id="s-receiver-list" class="recipient-list"></div>
                 <div class="hint">Hiển thị tên cơ quan; hệ thống tự gửi mã cơ quan tương ứng.</div>
@@ -1557,9 +1890,11 @@
               <div class="fg">
                 <label>Distribution List (phan phoi cuoi)</label>
                 <div class="recipient-picker">
-                  <input id="m-distrib-search" type="search" class="recipient-search" placeholder="Tim theo ten hoac ma co quan..." oninput="filterRecipientOptions('distribution')">
+                  <input id="m-distrib-search" type="search" class="recipient-search"
+                    placeholder="Tim theo ten hoac ma co quan..." oninput="filterRecipientOptions('distribution')">
                   <select id="m-distrib-picker" size="5" aria-label="Tim va chon co quan phan phoi"></select>
-                  <button type="button" class="btn btn-ghost btn-sm" onclick="addRecipient('distribution')">+ Them co quan</button>
+                  <button type="button" class="btn btn-ghost btn-sm" onclick="addRecipient('distribution')">+ Them co
+                    quan</button>
                 </div>
                 <div id="m-distrib-list" class="recipient-list"></div>
                 <div class="hint">Các cơ quan nhận văn bản sau khi B ký xong.</div>
@@ -1683,13 +2018,16 @@
 
               <!-- ===== XEM TRUOC PDF + KY DAU BEN B ===== -->
               <div class="vs-section" style="margin-top:14px;">
-                <div style="font-weight:600;color:var(--accent);font-size:13px;margin-bottom:12px;">&#128220; Xem Trước &amp; Đặt Dấu / Chữ Ký (B_BTC)</div>
-                
+                <div style="font-weight:600;color:var(--accent);font-size:13px;margin-bottom:12px;">&#128220; Xem Trước
+                  &amp; Đặt Dấu / Chữ Ký (B_BTC)</div>
+
                 <div class="fg">
                   <label>Điều hướng nhanh <span class="req">*</span></label>
                   <div style="display:flex; gap:8px; align-items:center;">
-                    <input type="number" id="mb-page" value="1" min="1" max="999" style="width:80px;" onchange="mbJumpToPage(this.value)" />
-                    <button class="btn btn-ghost btn-sm" onclick="mbJumpToPage(document.getElementById('mb-page').value)">Chuyển trang</button>
+                    <input type="number" id="mb-page" value="1" min="1" max="999" style="width:80px;"
+                      onchange="mbJumpToPage(this.value)" />
+                    <button class="btn btn-ghost btn-sm"
+                      onclick="mbJumpToPage(document.getElementById('mb-page').value)">Chuyển trang</button>
                     <button class="btn btn-ghost btn-sm" onclick="mbJumpToLastPage()">Ký trang cuối</button>
                   </div>
                 </div>
@@ -1704,12 +2042,14 @@
 
                 <div style="margin-top:8px; display:flex; gap:8px;">
                   <button class="btn btn-ghost btn-sm" onclick="mbResetLayers()">&#8635; Đặt lại vị trí</button>
-                  <span id="mb-stamp-info" style="font-size:11px;color:var(--muted);line-height:1.8;margin-left:4px;"></span>
+                  <span id="mb-stamp-info"
+                    style="font-size:11px;color:var(--muted);line-height:1.8;margin-left:4px;"></span>
                 </div>
               </div>
               <!-- /XEM TRUOC -->
 
-              <button class="btn btn-purple btn-full" id="btn-m-sign2" onclick="multiSign2()" disabled style="margin-top:14px;">
+              <button class="btn btn-purple btn-full" id="btn-m-sign2" onclick="multiSign2()" disabled
+                style="margin-top:14px;">
                 &#9998; B_BTC Ky Noi (FINAL_APPROVER) - POST /simulator/sign-and-build-multi-sig
               </button>
               <div id="m-sign2-ok" style="display:none;"></div>
@@ -1805,6 +2145,90 @@
       </div>
     </div>
 
+    <!-- ===== PAGE: AUDIT TIMELINE ===== -->
+    <div id="page-audit" class="page">
+      <div class="page-header">
+        <h2>Theo Dõi &amp; Kiểm Toán Văn Bản</h2>
+        <span class="flow-tag single">TRACKING</span>
+      </div>
+
+      <div class="info-box">
+        Có thể lọc theo mã văn bản, mã giao dịch hoặc để trống cả hai để lấy toàn bộ nhật ký mới nhất.
+      </div>
+
+      <div class="card">
+        <div class="audit-filter">
+          <div class="fg" style="margin-bottom:0;">
+            <label>Mã văn bản (tùy chọn)</label>
+            <input type="text" id="a-document-code" placeholder="CV-202609-9249" />
+          </div>
+          <div class="fg" style="margin-bottom:0;">
+            <label>Mã giao dịch (tùy chọn)</label>
+            <input type="text" id="a-transaction-code" placeholder="TXN-2026-0917-15100" />
+          </div>
+          <div class="fg" style="margin-bottom:0;">
+            <label>Số sự kiện/trang</label>
+            <input type="number" id="a-size" value="20" min="1" max="100" />
+          </div>
+          <button class="btn btn-primary" id="a-btn-search" onclick="auditSearch()">Tra cứu</button>
+        </div>
+        <details style="margin-top:12px;">
+          <summary style="cursor:pointer;color:var(--muted);font-size:12px;">Xác thực khi cần</summary>
+          <div class="fg" style="margin:10px 0 0;">
+            <label>Bearer Token</label>
+            <input type="password" id="a-token" placeholder="Dán access token nếu endpoint đang bật xác thực" />
+          </div>
+        </details>
+      </div>
+
+      <div class="card audit-document-flow">
+        <div id="a-flow-overview" style="display:none;">
+          <section class="audit-flow-section">
+            <div class="card-title">THÔNG TIN CHUNG VĂN BẢN: <span id="a-general-document-code">-</span></div>
+            <div class="audit-general-line">
+              <span>Đơn vị phát hành:</span>
+              <strong id="a-sender-organization">-</strong>
+            </div>
+            <div class="audit-general-line">
+              <span>Đơn vị nhận cuối:</span>
+              <div id="a-receivers" class="audit-receivers"></div>
+            </div>
+          </section>
+
+          <section id="a-workflow-section" class="audit-flow-section" style="display:none;">
+            <div class="audit-section-title">
+              <strong>TIẾN TRÌNH KÝ SỐ LIÊN THÔNG</strong>
+              <span id="a-progress-text">0/0 bước</span>
+            </div>
+            <div class="audit-progress-track">
+              <div id="a-progress-fill" class="audit-progress-fill"></div>
+            </div>
+            <div id="a-signing-flow" class="audit-flow"></div>
+          </section>
+
+          <div class="audit-flow-connector"><span>↓</span></div>
+        </div>
+
+        <section class="audit-flow-section audit-timeline-section">
+          <div class="audit-section-title"><strong>NHẬT KÝ SỰ KIỆN XỬ LÝ</strong></div>
+          <div id="a-loading" style="display:none; color:var(--muted); padding:16px; text-align:center;">Đang tải dữ liệu...</div>
+          <div id="a-events" class="audit-events">
+            <div class="res-empty">Nhấn Tra cứu để tải nhật ký.</div>
+          </div>
+          <div id="a-pagination" class="audit-pagination" style="display:none;">
+            <button class="btn btn-ghost btn-sm" id="a-prev" onclick="auditChangePage(-1)">Trang trước</button>
+            <span id="a-page-info" style="color:var(--muted);"></span>
+            <button class="btn btn-ghost btn-sm" id="a-next" onclick="auditChangePage(1)">Trang sau</button>
+          </div>
+        </section>
+
+        <details class="audit-flow-section">
+          <summary style="cursor:pointer;color:var(--muted);">Dữ liệu JSON dùng để kiểm tra</summary>
+          <div id="a-res-raw" class="raw-panel empty" style="margin-top:12px;">- Chưa có response -</div>
+        </details>
+      </div>
+    </div>
+
     <!-- ===== PAGE: KY VISUAL ===== -->
     <div id="page-visual" class="page active">
       <div class="page-header">
@@ -1856,12 +2280,14 @@
           <div class="card">
             <div class="card-title"><span class="step-badge">2</span> Đặt Dấu Đỏ Và Chữ Ký</div>
             <div class="hint" style="margin-bottom:10px;">
-              Kéo từng ảnh đến vị trí mong muốn; kéo góc dưới-phải để đổi kích thước. Hai ảnh dùng trực tiếp từ URL đã cung cấp.
+              Kéo từng ảnh đến vị trí mong muốn; kéo góc dưới-phải để đổi kích thước. Hai ảnh dùng trực tiếp từ URL đã
+              cung cấp.
             </div>
             <div class="fg">
               <label>Điều hướng nhanh <span class="req">*</span></label>
               <div style="display:flex; gap:8px; align-items:center;">
-                <input type="number" id="vs-page" value="1" min="1" max="999" style="width:80px;" onchange="vsChangePage()" />
+                <input type="number" id="vs-page" value="1" min="1" max="999" style="width:80px;"
+                  onchange="vsChangePage()" />
                 <button class="btn btn-ghost btn-sm" onclick="vsChangePage()">Chuyển trang</button>
                 <button class="btn btn-ghost btn-sm" onclick="vsJumpToLastPage()">Ký trang cuối</button>
               </div>
@@ -1892,7 +2318,8 @@
 
             <div id="vs-confirmed" class="vs-confirmed">
               <strong>&#9989; Đã xác nhận vị trí ký số.</strong>
-              <div class="hint" style="margin-top:5px;color:#bbf7d0;">Chọn luồng tiếp theo. Văn bản đã tải sẽ được giữ lại.</div>
+              <div class="hint" style="margin-top:5px;color:#bbf7d0;">Chọn luồng tiếp theo. Văn bản đã tải sẽ được giữ
+                lại.</div>
               <div class="vs-choice-actions">
                 <button class="btn btn-primary" onclick="vsContinueToFlow('single')">Ký Đơn</button>
                 <button class="btn btn-purple" onclick="vsContinueToFlow('multi')">Ký Nối</button>
@@ -1904,7 +2331,8 @@
             <div class="card-title">&#128161; Ghi Chú</div>
             <div class="hint" style="line-height:1.7;">
               Trang này không gọi các API <code>/exchange</code> hoặc <code>/exchange-documents/signatures</code>.
-              Việc ký và gửi thực tế sẽ dùng đúng API của trang <strong>Ký Đơn</strong> hoặc <strong>Ký Nối</strong> sau khi bạn chọn luồng.
+              Việc ký và gửi thực tế sẽ dùng đúng API của trang <strong>Ký Đơn</strong> hoặc <strong>Ký Nối</strong> sau
+              khi bạn chọn luồng.
             </div>
           </div>
         </div>
@@ -2035,8 +2463,8 @@
       var matchingOrganizations = activeOrganizations.filter(function (organization) {
         return !group.selectedCodes.includes(organization.code)
           && (!normalizedSearch
-          || normalizeSearchText(organization.name).includes(normalizedSearch)
-          || normalizeSearchText(organization.code).includes(normalizedSearch));
+            || normalizeSearchText(organization.name).includes(normalizedSearch)
+            || normalizeSearchText(organization.code).includes(normalizedSearch));
       });
 
       select.innerHTML = '';
@@ -2161,9 +2589,9 @@
       document.querySelectorAll('.page').forEach(function (p) { p.classList.remove('active'); });
       $(id).classList.add('active');
       var tabs = document.querySelectorAll('.tab');
-      var map = { 'page-visual': 0, 'page-single': 1, 'page-multi': 2, 'page-history': 3 };
+      var map = { 'page-visual': 0, 'page-single': 1, 'page-multi': 2, 'page-history': 3, 'page-audit': 4 };
       tabs.forEach(function (t) { t.classList.remove('active'); });
-      tabs[map[id]].classList.add('active');
+      if (tabs[map[id]]) tabs[map[id]].classList.add('active');
     }
 
     /* INIT */
@@ -2634,13 +3062,13 @@
       if (p.storagePath) {
         // Lay presigned URL tu storagePath
         fetch(BASE + '/simulator/presign?objectKey=' + encodeURIComponent(p.storagePath))
-          .then(function(r) { return r.json(); })
-          .then(function(j) {
+          .then(function (r) { return r.json(); })
+          .then(function (j) {
             var pdfUrl = (j.success && j.data) ? j.data : null;
             if (!pdfUrl) pdfUrl = p.storagePath;
             mbRenderDocumentPreview(pdfUrl);
           })
-          .catch(function() { mbRenderDocumentPreview(p.storagePath); });
+          .catch(function () { mbRenderDocumentPreview(p.storagePath); });
       }
       mbLoadOrgAssets('B_BTC');
     }
@@ -2648,7 +3076,7 @@
     // ===================================================================
     // BEN B: Helper functions — PDF preview + drag-drop
     // ===================================================================
-    var MB_STAMP_IMAGE_URL     = VS_STAMP_IMAGE_URL;
+    var MB_STAMP_IMAGE_URL = VS_STAMP_IMAGE_URL;
     var MB_SIGNATURE_IMAGE_URL = VS_SIGNATURE_IMAGE_URL;
 
     async function mbRenderDocumentPreview(pdfUrl) {
@@ -2686,55 +3114,55 @@
         var defaultWidth = defaultViewport.width;
         var defaultHeight = defaultViewport.height;
 
-        var observer = new IntersectionObserver(function(entries) {
-            entries.forEach(function(entry) {
-                if (entry.isIntersecting) {
-                    var wrapper = entry.target;
-                    if (wrapper.dataset.rendered) return;
-                    wrapper.dataset.rendered = 'true';
-                    var pNum = parseInt(wrapper.dataset.pageNum);
-                    
-                    pdfDoc.getPage(pNum).then(function(p) {
-                        var vp = p.getViewport({ scale: 1.2 });
-                        wrapper.style.width = vp.width + 'px';
-                        wrapper.style.height = vp.height + 'px';
-                        var canvas = wrapper.querySelector('canvas');
-                        canvas.width = vp.width;
-                        canvas.height = vp.height;
-                        p.render({ canvasContext: canvas.getContext('2d'), viewport: vp });
-                    });
-                }
-            });
+        var observer = new IntersectionObserver(function (entries) {
+          entries.forEach(function (entry) {
+            if (entry.isIntersecting) {
+              var wrapper = entry.target;
+              if (wrapper.dataset.rendered) return;
+              wrapper.dataset.rendered = 'true';
+              var pNum = parseInt(wrapper.dataset.pageNum);
+
+              pdfDoc.getPage(pNum).then(function (p) {
+                var vp = p.getViewport({ scale: 1.2 });
+                wrapper.style.width = vp.width + 'px';
+                wrapper.style.height = vp.height + 'px';
+                var canvas = wrapper.querySelector('canvas');
+                canvas.width = vp.width;
+                canvas.height = vp.height;
+                p.render({ canvasContext: canvas.getContext('2d'), viewport: vp });
+              });
+            }
+          });
         }, { root: wrap, rootMargin: '800px 0px' });
 
         var activeWrapper = null;
         for (var i = 1; i <= pdfDoc.numPages; i++) {
-            var wrapper = document.createElement('div');
-            wrapper.id = 'mb-page-' + i;
-            wrapper.className = 'pdf-page-wrapper';
-            wrapper.style.position = 'relative';
-            wrapper.style.width = defaultWidth + 'px';
-            wrapper.style.height = defaultHeight + 'px';
-            wrapper.style.margin = '10px auto';
-            wrapper.style.boxShadow = '0 0 5px rgba(0,0,0,0.3)';
-            wrapper.style.backgroundColor = '#fff';
-            wrapper.dataset.pageNum = i;
-            container.appendChild(wrapper);
+          var wrapper = document.createElement('div');
+          wrapper.id = 'mb-page-' + i;
+          wrapper.className = 'pdf-page-wrapper';
+          wrapper.style.position = 'relative';
+          wrapper.style.width = defaultWidth + 'px';
+          wrapper.style.height = defaultHeight + 'px';
+          wrapper.style.margin = '10px auto';
+          wrapper.style.boxShadow = '0 0 5px rgba(0,0,0,0.3)';
+          wrapper.style.backgroundColor = '#fff';
+          wrapper.dataset.pageNum = i;
+          container.appendChild(wrapper);
 
-            var canvas = document.createElement('canvas');
-            canvas.style.display = 'block';
-            wrapper.appendChild(canvas);
+          var canvas = document.createElement('canvas');
+          canvas.style.display = 'block';
+          wrapper.appendChild(canvas);
 
-            observer.observe(wrapper);
+          observer.observe(wrapper);
 
-            if (i === 1) activeWrapper = wrapper;
+          if (i === 1) activeWrapper = wrapper;
         }
 
         if (activeWrapper) {
-            activeWrapper.appendChild(vsCreateSignLayer('mb-stamp-layer', 'stamp', 'DẤU ĐỎ', MB_STAMP_IMAGE_URL, shield));
-            activeWrapper.appendChild(vsCreateSignLayer('mb-signature-layer', 'signature', 'CHỮ KÝ', MB_SIGNATURE_IMAGE_URL, shield));
+          activeWrapper.appendChild(vsCreateSignLayer('mb-stamp-layer', 'stamp', 'DẤU ĐỎ', MB_STAMP_IMAGE_URL, shield));
+          activeWrapper.appendChild(vsCreateSignLayer('mb-signature-layer', 'signature', 'CHỮ KÝ', MB_SIGNATURE_IMAGE_URL, shield));
         }
-        
+
         mbUpdateCoordsDisplay();
       } catch (err) {
         container.innerHTML = '<div style="color:var(--red);padding:20px;">Lỗi tải PDF: ' + err.message + '</div>';
@@ -2760,7 +3188,7 @@
         signature.style.top = '80%';
         signature.style.left = '60%';
       }
-      
+
       wrapper.scrollIntoView({ behavior: 'smooth', block: 'center' });
       mbUpdateCoordsDisplay();
     }
@@ -2775,7 +3203,7 @@
       if (!stamp || !signature) { toast('Chưa có văn bản.'); return; }
       stamp.style.cssText = '';
       signature.style.cssText = '';
-      
+
       var pageNum = parseInt($('mb-page').value) || 1;
       mbJumpToPage(pageNum); // Re-append to reset to default position
     }
@@ -2783,7 +3211,7 @@
     function mbUpdateCoordsDisplay() {
       var stamp = $('mb-stamp-layer');
       var signature = $('mb-signature-layer');
-      var info  = $('mb-stamp-info');
+      var info = $('mb-stamp-info');
       if (!stamp || !signature || !info) return;
       var wrapper = stamp.parentElement;
       if (!wrapper) return;
@@ -2797,7 +3225,7 @@
 
     function mbCollectVisualLayers() {
       var stamp = document.getElementById('mb-stamp-layer');
-      var sig   = document.getElementById('mb-signature-layer');
+      var sig = document.getElementById('mb-signature-layer');
       if (!stamp || !sig) return null;
       var wrapper = stamp.parentElement;
       if (!wrapper) return null;
@@ -2809,9 +3237,9 @@
           applyVisual: true,
           pageNumber: pageNum,
           positionXRatio: layer.offsetLeft / wrapper.clientWidth,
-          positionYRatio: layer.offsetTop  / wrapper.clientHeight,
-          widthRatio:     layer.offsetWidth  / wrapper.clientWidth,
-          heightRatio:    layer.offsetHeight / wrapper.clientHeight
+          positionYRatio: layer.offsetTop / wrapper.clientHeight,
+          widthRatio: layer.offsetWidth / wrapper.clientWidth,
+          heightRatio: layer.offsetHeight / wrapper.clientHeight
         };
       }
       return { stamp: coords(stamp), signature: coords(sig) };
@@ -2825,10 +3253,10 @@
         var json = await res.json();
         if (!json.success || !json.data) return;
         var assets = json.data;
-        var stampA = assets.find(function(a){ return a.assetType==='STAMP_MAIN' && a.isDefault; })
-                  || assets.find(function(a){ return a.assetType==='STAMP_MAIN'; });
-        var sigA   = assets.find(function(a){ return a.assetType==='SIGNATURE_LEADER' && a.isDefault; })
-                  || assets.find(function(a){ return a.assetType==='SIGNATURE_LEADER'; });
+        var stampA = assets.find(function (a) { return a.assetType === 'STAMP_MAIN' && a.isDefault; })
+          || assets.find(function (a) { return a.assetType === 'STAMP_MAIN'; });
+        var sigA = assets.find(function (a) { return a.assetType === 'SIGNATURE_LEADER' && a.isDefault; })
+          || assets.find(function (a) { return a.assetType === 'SIGNATURE_LEADER'; });
         if (stampA) {
           MB_STAMP_IMAGE_URL = stampA.imageUrl;
           var el = document.getElementById('mb-stamp-layer');
@@ -2840,15 +3268,15 @@
           if (el) el.querySelector('img').src = MB_SIGNATURE_IMAGE_URL;
         }
         toast('B_BTC: Da tai ' + assets.length + ' asset.');
-      } catch(e) { console.warn('[mbLoadOrgAssets]', e); }
+      } catch (e) { console.warn('[mbLoadOrgAssets]', e); }
     }
 
 
     async function multiSign2() {
       if (!S.multi.signatures || !S.multi.signatures.length) { alert('Can existingSignatures tu Buoc 1!'); return; }
       var masterTx = $('m-masterTx').value;
-      var docCode  = $('m-docCode').value;
-      var distrib  = getRecipientCodes('distribution');
+      var docCode = $('m-docCode').value;
+      var distrib = getRecipientCodes('distribution');
 
       // Thu thap toa do dau va chu ky cua Ben B
       var visualLayers = mbCollectVisualLayers();
@@ -2862,13 +3290,13 @@
         certificateSerialNumber: ORGS.B_BTC.cert,
         signerRole: 'FINAL_APPROVER', signatureType: 'OFFICIAL',
         existingSignatures: S.multi.signatures,
-        title:        S.multi.step1Payload ? S.multi.step1Payload.title        : null,
+        title: S.multi.step1Payload ? S.multi.step1Payload.title : null,
         documentType: S.multi.step1Payload ? S.multi.step1Payload.documentType : null,
-        priority:     S.multi.step1Payload ? S.multi.step1Payload.priority     : null,
-        summary:      S.multi.step1Payload ? S.multi.step1Payload.summary      : null,
-        issuedDate:   S.multi.step1Payload ? S.multi.step1Payload.issuedDate   : null,
+        priority: S.multi.step1Payload ? S.multi.step1Payload.priority : null,
+        summary: S.multi.step1Payload ? S.multi.step1Payload.summary : null,
+        issuedDate: S.multi.step1Payload ? S.multi.step1Payload.issuedDate : null,
         // Toa do dau va chu ky cua Ben B
-        stampCoords:     visualLayers ? visualLayers.stamp     : null,
+        stampCoords: visualLayers ? visualLayers.stamp : null,
         signatureCoords: visualLayers ? visualLayers.signature : null
       };
       try {
@@ -3025,7 +3453,7 @@
     // khong goi API ky/gui. API duoc goi tai luong da chon.
     // =============================================
     var vsUploadResult = null;  // { storagePath, previewUrl, payloadChecksum }
-    
+
     function showFlash(msg) { toast(msg); }
     // URL ảnh dấu và chữ ký — mặc định fallback, sẽ được thay bằng asset từ API
     var VS_STAMP_IMAGE_URL = 'https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEiMCQrknIIaf67d-092R6REk3W3Eu5TGK-6KMo99yKzvTvxT7AYsvnuU3u57jyQ8L4WPk6EmuxIizupipYN4EeBVuzTOjcEFQacxoY4DZlpCx0Nah4PN2Hcc-Ok6YmXENL17ApHLKCL9BCpADeqSWvYIMo6bPDQkuszqAnj0BUfrfZgYbEAedWzujIblw/s610/tach-con-dau-bang-photoshop-4.jpg';
@@ -3044,10 +3472,10 @@
         if (!json.success || !json.data) return;
 
         var assets = json.data;
-        var stampAsset = assets.find(function(a) { return a.assetType === 'STAMP_MAIN' && a.isDefault; })
-                      || assets.find(function(a) { return a.assetType === 'STAMP_MAIN'; });
-        var sigAsset   = assets.find(function(a) { return a.assetType === 'SIGNATURE_LEADER' && a.isDefault; })
-                      || assets.find(function(a) { return a.assetType === 'SIGNATURE_LEADER'; });
+        var stampAsset = assets.find(function (a) { return a.assetType === 'STAMP_MAIN' && a.isDefault; })
+          || assets.find(function (a) { return a.assetType === 'STAMP_MAIN'; });
+        var sigAsset = assets.find(function (a) { return a.assetType === 'SIGNATURE_LEADER' && a.isDefault; })
+          || assets.find(function (a) { return a.assetType === 'SIGNATURE_LEADER'; });
 
         if (stampAsset) {
           VS_STAMP_IMAGE_URL = stampAsset.imageUrl;
@@ -3118,7 +3546,7 @@
         var loadingTask = pdfjsLib.getDocument(previewUrl);
         var pdf = await loadingTask.promise;
         window._currentPdfNumPages = pdf.numPages;
-        
+
         var pageNum = parseInt($('vs-page').value) || 1;
         if (pageNum > pdf.numPages) pageNum = pdf.numPages;
         if (pageNum < 1) pageNum = 1;
@@ -3138,55 +3566,55 @@
         var defaultWidth = defaultViewport.width;
         var defaultHeight = defaultViewport.height;
 
-        var observer = new IntersectionObserver(function(entries) {
-            entries.forEach(function(entry) {
-                if (entry.isIntersecting) {
-                    var wrapper = entry.target;
-                    if (wrapper.dataset.rendered) return;
-                    wrapper.dataset.rendered = 'true';
-                    var pNum = parseInt(wrapper.dataset.pageNum);
-                    
-                    pdf.getPage(pNum).then(function(p) {
-                        var vp = p.getViewport({ scale: 1.2 });
-                        wrapper.style.width = vp.width + 'px';
-                        wrapper.style.height = vp.height + 'px';
-                        var canvas = wrapper.querySelector('canvas');
-                        canvas.width = vp.width;
-                        canvas.height = vp.height;
-                        p.render({ canvasContext: canvas.getContext('2d'), viewport: vp });
-                    });
-                }
-            });
+        var observer = new IntersectionObserver(function (entries) {
+          entries.forEach(function (entry) {
+            if (entry.isIntersecting) {
+              var wrapper = entry.target;
+              if (wrapper.dataset.rendered) return;
+              wrapper.dataset.rendered = 'true';
+              var pNum = parseInt(wrapper.dataset.pageNum);
+
+              pdf.getPage(pNum).then(function (p) {
+                var vp = p.getViewport({ scale: 1.2 });
+                wrapper.style.width = vp.width + 'px';
+                wrapper.style.height = vp.height + 'px';
+                var canvas = wrapper.querySelector('canvas');
+                canvas.width = vp.width;
+                canvas.height = vp.height;
+                p.render({ canvasContext: canvas.getContext('2d'), viewport: vp });
+              });
+            }
+          });
         }, { root: container, rootMargin: '800px 0px' });
 
         var activeWrapper = null;
         for (var i = 1; i <= pdf.numPages; i++) {
-            var wrapper = document.createElement('div');
-            wrapper.id = 'pdf-page-wrapper-' + i;
-            wrapper.className = 'pdf-page-wrapper';
-            wrapper.style.position = 'relative';
-            wrapper.style.width = defaultWidth + 'px';
-            wrapper.style.height = defaultHeight + 'px';
-            wrapper.style.margin = '10px auto';
-            wrapper.style.boxShadow = '0 0 5px rgba(0,0,0,0.3)';
-            wrapper.style.backgroundColor = '#fff';
-            wrapper.dataset.pageNum = i;
-            container.appendChild(wrapper);
+          var wrapper = document.createElement('div');
+          wrapper.id = 'pdf-page-wrapper-' + i;
+          wrapper.className = 'pdf-page-wrapper';
+          wrapper.style.position = 'relative';
+          wrapper.style.width = defaultWidth + 'px';
+          wrapper.style.height = defaultHeight + 'px';
+          wrapper.style.margin = '10px auto';
+          wrapper.style.boxShadow = '0 0 5px rgba(0,0,0,0.3)';
+          wrapper.style.backgroundColor = '#fff';
+          wrapper.dataset.pageNum = i;
+          container.appendChild(wrapper);
 
-            var canvas = document.createElement('canvas');
-            canvas.style.display = 'block';
-            wrapper.appendChild(canvas);
+          var canvas = document.createElement('canvas');
+          canvas.style.display = 'block';
+          wrapper.appendChild(canvas);
 
-            observer.observe(wrapper);
+          observer.observe(wrapper);
 
-            if (i === pageNum) activeWrapper = wrapper;
+          if (i === pageNum) activeWrapper = wrapper;
         }
 
         if (activeWrapper) {
-            activeWrapper.appendChild(vsCreateSignLayer('vs-stamp-layer', 'stamp', 'DẤU ĐỎ', VS_STAMP_IMAGE_URL, shield));
-            activeWrapper.appendChild(vsCreateSignLayer('vs-signature-layer', 'signature', 'CHỮ KÝ', VS_SIGNATURE_IMAGE_URL, shield));
+          activeWrapper.appendChild(vsCreateSignLayer('vs-stamp-layer', 'stamp', 'DẤU ĐỎ', VS_STAMP_IMAGE_URL, shield));
+          activeWrapper.appendChild(vsCreateSignLayer('vs-signature-layer', 'signature', 'CHỮ KÝ', VS_SIGNATURE_IMAGE_URL, shield));
         }
-        
+
         vsUpdateCoordsDisplay();
       } catch (err) {
         container.innerHTML = '<div style="color:var(--red);padding:20px;">Lỗi render PDF: ' + err.message + '</div>';
@@ -3428,67 +3856,67 @@
       area.style.overflow = 'auto';
 
       function renderPdf(finalUrl) {
-        pdfjsLib.getDocument(finalUrl).promise.then(async function(pdf) {
+        pdfjsLib.getDocument(finalUrl).promise.then(async function (pdf) {
           area.innerHTML = '';
           area.style.display = 'block';
-          
+
           var targetPageNum = 1;
           if (page === 'single') {
-              if (S.single.visualLayers && S.single.visualLayers.stamp) targetPageNum = S.single.visualLayers.stamp.pageNumber || 1;
+            if (S.single.visualLayers && S.single.visualLayers.stamp) targetPageNum = S.single.visualLayers.stamp.pageNumber || 1;
           } else {
-              if (S.multi.visualLayers && S.multi.visualLayers.stamp) targetPageNum = S.multi.visualLayers.stamp.pageNumber || 1;
+            if (S.multi.visualLayers && S.multi.visualLayers.stamp) targetPageNum = S.multi.visualLayers.stamp.pageNumber || 1;
           }
 
           for (var i = 1; i <= pdf.numPages; i++) {
-              var pdfPage = await pdf.getPage(i);
-              var viewport = pdfPage.getViewport({ scale: 1.0 });
-              var wrapper = document.createElement('div');
-              wrapper.style.position = 'relative';
-              wrapper.style.width = viewport.width + 'px';
-              wrapper.style.height = viewport.height + 'px';
-              wrapper.style.margin = '10px auto';
-              wrapper.style.border = '1px solid #333';
-              
-              var canvas = document.createElement('canvas');
-              canvas.width = viewport.width;
-              canvas.height = viewport.height;
-              wrapper.appendChild(canvas);
-              area.appendChild(wrapper);
+            var pdfPage = await pdf.getPage(i);
+            var viewport = pdfPage.getViewport({ scale: 1.0 });
+            var wrapper = document.createElement('div');
+            wrapper.style.position = 'relative';
+            wrapper.style.width = viewport.width + 'px';
+            wrapper.style.height = viewport.height + 'px';
+            wrapper.style.margin = '10px auto';
+            wrapper.style.border = '1px solid #333';
 
-              await pdfPage.render({ canvasContext: canvas.getContext('2d'), viewport: viewport }).promise;
+            var canvas = document.createElement('canvas');
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+            wrapper.appendChild(canvas);
+            area.appendChild(wrapper);
 
-              if (i === targetPageNum) {
-                  var layers = page === 'single' ? S.single.visualLayers : S.multi.visualLayers;
-                  if (layers) {
-                      if (layers.stamp) {
-                          var stamp = document.createElement('img');
-                          stamp.src = VS_STAMP_IMAGE_URL;
-                          stamp.style.position = 'absolute';
-                          stamp.style.left = (layers.stamp.positionXRatio * 100) + '%';
-                          stamp.style.top = (layers.stamp.positionYRatio * 100) + '%';
-                          stamp.style.width = (layers.stamp.widthRatio * 100) + '%';
-                          stamp.style.height = (layers.stamp.heightRatio * 100) + '%';
-                          stamp.style.border = '2px dashed red';
-                          stamp.style.opacity = '0.8';
-                          wrapper.appendChild(stamp);
-                      }
-                      if (layers.signature) {
-                          var sig = document.createElement('img');
-                          sig.src = VS_SIGNATURE_IMAGE_URL;
-                          sig.style.position = 'absolute';
-                          sig.style.left = (layers.signature.positionXRatio * 100) + '%';
-                          sig.style.top = (layers.signature.positionYRatio * 100) + '%';
-                          sig.style.width = (layers.signature.widthRatio * 100) + '%';
-                          sig.style.height = (layers.signature.heightRatio * 100) + '%';
-                          sig.style.border = '2px dashed blue';
-                          sig.style.opacity = '0.8';
-                          wrapper.appendChild(sig);
-                      }
-                  }
-                  wrapper.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            await pdfPage.render({ canvasContext: canvas.getContext('2d'), viewport: viewport }).promise;
+
+            if (i === targetPageNum) {
+              var layers = page === 'single' ? S.single.visualLayers : S.multi.visualLayers;
+              if (layers) {
+                if (layers.stamp) {
+                  var stamp = document.createElement('img');
+                  stamp.src = VS_STAMP_IMAGE_URL;
+                  stamp.style.position = 'absolute';
+                  stamp.style.left = (layers.stamp.positionXRatio * 100) + '%';
+                  stamp.style.top = (layers.stamp.positionYRatio * 100) + '%';
+                  stamp.style.width = (layers.stamp.widthRatio * 100) + '%';
+                  stamp.style.height = (layers.stamp.heightRatio * 100) + '%';
+                  stamp.style.border = '2px dashed red';
+                  stamp.style.opacity = '0.8';
+                  wrapper.appendChild(stamp);
+                }
+                if (layers.signature) {
+                  var sig = document.createElement('img');
+                  sig.src = VS_SIGNATURE_IMAGE_URL;
+                  sig.style.position = 'absolute';
+                  sig.style.left = (layers.signature.positionXRatio * 100) + '%';
+                  sig.style.top = (layers.signature.positionYRatio * 100) + '%';
+                  sig.style.width = (layers.signature.widthRatio * 100) + '%';
+                  sig.style.height = (layers.signature.heightRatio * 100) + '%';
+                  sig.style.border = '2px dashed blue';
+                  sig.style.opacity = '0.8';
+                  wrapper.appendChild(sig);
+                }
               }
+              wrapper.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
           }
-        }).catch(function(err) {
+        }).catch(function (err) {
           area.innerHTML = '<div style="padding:20px;text-align:center;color:var(--red);">Lỗi tải PDF: ' + err.message + '</div>';
         });
       }
@@ -3498,12 +3926,12 @@
       } else {
         // It's likely an object key like signed-pdfs/...
         fetch(BASE + '/simulator/presign?objectKey=' + encodeURIComponent(url))
-          .then(function(r) { return r.json(); })
-          .then(function(j) {
+          .then(function (r) { return r.json(); })
+          .then(function (j) {
             if (j.success && j.data) renderPdf(j.data);
             else renderPdf(url);
           })
-          .catch(function() { renderPdf(url); });
+          .catch(function () { renderPdf(url); });
       }
     }
 
@@ -3531,6 +3959,384 @@
         layer.appendChild(image);
         area.appendChild(layer);
       });
+    }
+
+    /* AUDIT TIMELINE */
+    var auditState = {
+      documentCode: '',
+      transactionCode: '',
+      page: 0,
+      size: 20,
+      totalPages: 0
+    };
+
+    function auditSearch() {
+      auditState.documentCode = $('a-document-code').value.trim();
+      auditState.transactionCode = $('a-transaction-code').value.trim();
+      auditState.page = 0;
+      auditState.size = auditReadSize();
+      auditRequest();
+    }
+
+    function auditReadSize() {
+      return Math.min(100, Math.max(1, Number($('a-size').value) || 20));
+    }
+
+    function auditRequestHeaders() {
+      var token = $('a-token').value.trim().replace(/^Bearer\s+/i, '');
+      return token ? { Authorization: 'Bearer ' + token } : {};
+    }
+
+    function auditChangePage(offset) {
+      var nextPage = auditState.page + offset;
+      if (nextPage < 0 || (auditState.totalPages > 0 && nextPage >= auditState.totalPages)) return;
+      auditState.page = nextPage;
+      auditRequest();
+    }
+
+    async function auditRequest() {
+      auditSetLoading(true);
+      auditHideOverview();
+
+      try {
+        var requestHeaders = auditRequestHeaders();
+        if (auditState.documentCode && !auditState.transactionCode) {
+          await auditRequestTimeline(requestHeaders);
+        } else {
+          await auditRequestSearch(requestHeaders);
+        }
+      } catch (error) {
+        setRaw('a-res-raw', error.body || error);
+        auditRenderError(auditErrorMessage(error));
+      } finally {
+        auditSetLoading(false);
+      }
+    }
+
+    async function auditRequestTimeline(requestHeaders) {
+      var query = '?page=' + auditState.page + '&size=' + auditState.size;
+      if (auditState.documentCode) {
+        query += '&documentCode=' + encodeURIComponent(auditState.documentCode);
+      }
+      var response = await apiFetch('GET', '/audit-logs/timeline' + query, null, requestHeaders);
+      var timeline = response.data || {};
+      setRaw('a-res-raw', response);
+      auditRenderOverview(timeline);
+      auditRenderEvents(timeline);
+    }
+
+    async function auditRequestSearch(requestHeaders) {
+      var query = '?page=' + auditState.page + '&size=' + auditState.size;
+      if (auditState.transactionCode) {
+        query += '&transactionCode=' + encodeURIComponent(auditState.transactionCode);
+      }
+      if (auditState.documentCode) {
+        query += '&documentCode=' + encodeURIComponent(auditState.documentCode);
+      }
+
+      var response = await apiFetch('GET', '/audit-logs' + query, null, requestHeaders);
+      var pageData = response.data || {};
+      var content = Array.isArray(pageData.content) ? pageData.content : [];
+      var resolvedDocumentCode = auditState.documentCode ||
+        (auditState.transactionCode ? auditFirstDocumentCode(content) : '');
+      var overviewResponse = null;
+
+      if (resolvedDocumentCode) {
+        overviewResponse = await apiFetch(
+          'GET',
+          '/audit-logs/timeline?documentCode=' + encodeURIComponent(resolvedDocumentCode) + '&page=0&size=1',
+          null,
+          requestHeaders
+        ).catch(function () { return null; });
+      }
+
+      if (overviewResponse) auditRenderOverview(overviewResponse.data || {});
+      auditRenderSearchResults(pageData);
+      setRaw('a-res-raw', {
+        search: response,
+        overview: overviewResponse || undefined
+      });
+    }
+
+    function auditRenderSearchResults(pageData) {
+      var content = Array.isArray(pageData.content) ? pageData.content : [];
+      var groups = auditGroupByDocument(content);
+      var container = $('a-events');
+      container.className = 'audit-events';
+      container.innerHTML = groups.length
+        ? groups.map(auditDocumentGroupHtml).join('')
+        : '<div class="res-empty">Không có sự kiện audit phù hợp.</div>';
+
+      var pageable = pageData.pageable || {};
+      auditUpdatePagination(
+        pageable.pageNumber == null ? auditState.page : pageable.pageNumber,
+        pageData.totalPages || 0,
+        pageData.totalElements || 0
+      );
+    }
+
+    function auditGroupByDocument(items) {
+      var documentByRequest = {};
+      items.forEach(function (item) {
+        if (item.requestId && item.documentCode) documentByRequest[item.requestId] = item.documentCode;
+      });
+
+      var groupsByKey = {};
+      var groups = [];
+      items.forEach(function (item) {
+        var documentCode = item.documentCode || documentByRequest[item.requestId] || '';
+        var key = documentCode || ('request:' + (item.requestId || item.eventId || groups.length));
+        if (!groupsByKey[key]) {
+          groupsByKey[key] = {
+            documentCode: documentCode,
+            transactionCode: item.transactionCode || '',
+            masterTransactionCode: item.masterTransactionCode || '',
+            latestTime: item.createdAt,
+            events: []
+          };
+          groups.push(groupsByKey[key]);
+        }
+        if (!groupsByKey[key].transactionCode && item.transactionCode) {
+          groupsByKey[key].transactionCode = item.transactionCode;
+        }
+        if (!groupsByKey[key].masterTransactionCode && item.masterTransactionCode) {
+          groupsByKey[key].masterTransactionCode = item.masterTransactionCode;
+        }
+        var event = auditSearchItemToTimeline(item);
+        if (!event.documentCode) event.documentCode = documentCode;
+        event.metadata = item.metadata || {};
+        groupsByKey[key].events.push(event);
+      });
+      return groups;
+    }
+
+    function auditDocumentGroupHtml(group, index) {
+      var latestStatus = group.events.length ? group.events[0].status : 'UNKNOWN';
+      var statusClass = String(latestStatus || 'UNKNOWN').toLowerCase();
+      var documentLabel = group.documentCode || 'Chưa xác định mã văn bản';
+      var transactionParts = [group.transactionCode ? 'Giao dịch: ' + group.transactionCode : 'Chưa có mã giao dịch'];
+      if (group.masterTransactionCode) transactionParts.push('Luồng chính: ' + group.masterTransactionCode);
+      var transactionLabel = transactionParts.join(' · ');
+      var openAttribute = index === 0 ? ' open' : '';
+      var encodedDocumentCode = encodeURIComponent(group.documentCode).replace(/'/g, '%27');
+      var button = group.documentCode
+        ? '<button class="btn btn-primary btn-sm" onclick="auditOpenDocument(decodeURIComponent(\'' +
+          encodedDocumentCode + '\'))">Xem toàn bộ luồng</button>'
+        : '';
+
+      return '<details class="audit-document-group"' + openAttribute + '>' +
+        '<summary>' +
+          '<div><div class="audit-group-title">Văn bản: ' + escHtml(documentLabel) + '</div>' +
+          '<div class="audit-group-subtitle">' + escHtml(transactionLabel) + ' · ' + group.events.length +
+          ' sự kiện trong trang</div></div>' +
+          '<span class="audit-status ' + statusClass + '">' + escHtml(auditStatusName(latestStatus)) + '</span>' +
+        '</summary>' +
+        '<div class="audit-group-events">' + group.events.map(auditGroupEventHtml).join('') +
+          '<div class="audit-group-action"><span style="color:var(--muted);font-size:12px;">Cập nhật gần nhất: ' +
+          escHtml(auditFormatTime(group.latestTime)) + '</span>' + button + '</div>' +
+        '</div>' +
+      '</details>';
+    }
+
+    function auditGroupEventHtml(item) {
+      var metadata = item.metadata || {};
+      var status = String(item.status || 'UNKNOWN');
+      var statusClass = status.toLowerCase();
+      var stepNumber = metadata.currentStep == null ? null : Number(metadata.currentStep) + 1;
+      var stepLabel = stepNumber == null ? '' : 'Bước ' + stepNumber + ' · ';
+      var route = '<span class="audit-route-node">' + escHtml(item.actor || 'Không xác định') + '</span>';
+      if (item.receiverOrganization) {
+        route += '<span class="audit-route-arrow">&#10132;</span>' +
+          '<span class="audit-route-node">' + escHtml(item.receiverOrganization) + '</span>';
+      }
+
+      return '<div class="audit-group-event">' +
+        '<div class="audit-event-head"><strong>' + escHtml(stepLabel + (item.actionName || '-')) + '</strong>' +
+        '<span class="audit-status ' + statusClass + '">' + escHtml(auditStatusName(status)) + '</span></div>' +
+        '<div class="audit-route">' + route + '</div>' +
+        (item.description ? '<div class="audit-event-description">' + escHtml(item.description) + '</div>' : '') +
+        '<div class="audit-group-subtitle">' + escHtml(auditFormatTime(item.time)) + '</div>' +
+        (item.reason ? '<div style="color:#fecaca;margin-top:7px;">Lý do: ' + escHtml(item.reason) + '</div>' : '') +
+      '</div>';
+    }
+
+    function auditOpenDocument(documentCode) {
+      $('a-document-code').value = documentCode;
+      $('a-transaction-code').value = '';
+      auditSearch();
+      window.scrollTo({ top: $('page-audit').offsetTop, behavior: 'smooth' });
+    }
+
+    function auditFirstDocumentCode(items) {
+      for (var i = 0; i < items.length; i++) {
+        if (items[i].documentCode) return items[i].documentCode;
+      }
+      return '';
+    }
+
+    function auditSearchItemToTimeline(item) {
+      var metadata = item.metadata || {};
+      var receiverCode = metadata.nextReceiver || metadata.receiverOrganizationCode;
+      var actorCode = item.actorOrganizationCode;
+      if (!actorCode && item.action === 'MULTI_SIGNATURE_VALIDATED') actorCode = 'GATEWAY';
+      return {
+        time: item.createdAt,
+        documentCode: item.documentCode,
+        transactionCode: item.transactionCode,
+        actionName: auditActionName(item.action),
+        actor: auditOrganizationName(actorCode),
+        receiverOrganization: receiverCode ? auditOrganizationName(receiverCode) : null,
+        status: item.result,
+        description: auditEventDescription(item, metadata, receiverCode),
+        reason: item.reason || item.errorMessage
+      };
+    }
+
+    function auditActionName(action) {
+      var names = {
+        DOCUMENT_EXCHANGE_ACCEPTED: 'Tiếp nhận văn bản',
+        TRANSACTION_CREATED: 'Khởi tạo giao dịch',
+        DOCUMENT_REPLACED: 'Thay thế văn bản',
+        ACK_RECEIVED: 'Xác nhận nhận văn bản',
+        DOCUMENT_RECALLED: 'Thu hồi văn bản',
+        RECALL_ACTION_INITIATED: 'Khởi tạo yêu cầu thu hồi',
+        UPDATE_ACTION_INITIATED: 'Khởi tạo yêu cầu cập nhật',
+        MULTI_SIGNATURE_STEP_COMPLETED: 'Ký số bước luân chuyển',
+        MULTI_SIGNATURE_VALIDATED: 'Xác minh tính hợp lệ chữ ký',
+        DOCUMENT_UPDATED: 'Cập nhật văn bản'
+      };
+      return names[action] || String(action || '-').replace(/_/g, ' ');
+    }
+
+    function auditOrganizationName(code) {
+      if (!code) return 'Không xác định';
+      if (code === 'GATEWAY') return 'Cổng kết nối liên thông';
+      var organization = activeOrganizations.find(function (item) { return item.code === code; });
+      return organization ? organization.name : code;
+    }
+
+    function auditEventDescription(item, metadata, receiverCode) {
+      if (item.action === 'MULTI_SIGNATURE_STEP_COMPLETED') {
+        var stepText = metadata.currentStep == null ? '' : ' bước ' + (Number(metadata.currentStep) + 1);
+        var receiverText = receiverCode ? '. Đã chuyển tiếp tới ' + auditOrganizationName(receiverCode) : '';
+        return 'Hoàn tất' + stepText + receiverText;
+      }
+      if (item.action === 'MULTI_SIGNATURE_VALIDATED') {
+        var verified = metadata.verifiedCount == null ? '-' : metadata.verifiedCount;
+        var total = metadata.signatureCount == null ? '-' : metadata.signatureCount;
+        return 'Xác thực thành công ' + verified + '/' + total + ' chữ ký số hợp lệ';
+      }
+      return item.errorMessage || auditActionName(item.action);
+    }
+
+    function auditSetLoading(loading) {
+      $('a-loading').style.display = loading ? 'block' : 'none';
+      $('a-btn-search').disabled = loading;
+    }
+
+    function auditHideOverview() {
+      $('a-flow-overview').style.display = 'none';
+      $('a-workflow-section').style.display = 'none';
+    }
+
+    function auditRenderOverview(timeline) {
+      if (!timeline.documentCode) return;
+      $('a-general-document-code').textContent = timeline.documentCode;
+      $('a-sender-organization').textContent = timeline.senderOrganization || '-';
+      var receivers = Array.isArray(timeline.receiverOrganizations) ? timeline.receiverOrganizations : [];
+      $('a-receivers').innerHTML = receivers.length
+        ? receivers.map(function (name) { return '<span class="audit-chip">' + escHtml(name) + '</span>'; }).join('')
+        : '<span style="color:var(--muted);font-size:12px;">Chưa có đơn vị nhận cuối.</span>';
+      $('a-flow-overview').style.display = 'block';
+
+      var steps = Array.isArray(timeline.signingOrganizations) ? timeline.signingOrganizations : [];
+      if (steps.length) {
+        var completedSteps = steps.filter(function (step) { return step.status === 'COMPLETED'; }).length;
+        var progressPercent = Math.round((completedSteps / steps.length) * 100);
+        var rejected = timeline.signingFlowStatus === 'REJECTED';
+        $('a-progress-text').textContent = completedSteps + '/' + steps.length + ' bước hoàn thành (' + progressPercent + '%)' +
+          (rejected ? ' - Luồng đã bị từ chối' : '');
+        $('a-progress-fill').className = 'audit-progress-fill' + (rejected ? ' rejected' : '');
+        $('a-progress-fill').style.width = progressPercent + '%';
+        $('a-signing-flow').innerHTML = steps.map(function (step, index) {
+          var status = String(step.status || 'PENDING');
+          var statusClass = status.toLowerCase();
+          var icon = ({ COMPLETED: '✓', CURRENT: '⏳', PENDING: '○', REJECTED: '✕' })[status] || '○';
+          var stepHtml = '<div class="audit-step ' + statusClass + '">' +
+            '<div class="audit-step-icon">' + icon + '</div>' +
+            '<div style="font-weight:700;margin-bottom:10px;">' + escHtml(step.order + '. ' + (step.name || '-')) + '</div>' +
+            '<span class="audit-step-status ' + statusClass + '">' + escHtml(auditSigningStatusName(status)) + '</span>' +
+          '</div>';
+          return stepHtml + (index < steps.length - 1 ? '<div class="audit-arrow">&#9658;</div>' : '');
+        }).join('');
+        $('a-workflow-section').style.display = 'block';
+      }
+    }
+
+    function auditRenderEvents(timeline) {
+      var items = Array.isArray(timeline.items) ? timeline.items : [];
+      $('a-events').className = 'audit-events' + (items.length ? ' has-events' : '');
+      $('a-events').innerHTML = items.length
+        ? items.map(auditEventHtml).join('')
+        : '<div class="res-empty">Không có sự kiện audit phù hợp.</div>';
+
+      auditUpdatePagination(timeline.page, timeline.totalPages, timeline.totalElements);
+    }
+
+    function auditUpdatePagination(page, totalPages, totalElements) {
+      auditState.page = Number(page) || 0;
+      auditState.totalPages = Number(totalPages) || 0;
+      $('a-page-info').textContent = 'Trang ' + (auditState.page + 1) + ' / ' + Math.max(1, auditState.totalPages) +
+        ' (Tổng ' + (totalElements || 0) + ' sự kiện)';
+      $('a-prev').disabled = auditState.page <= 0;
+      $('a-next').disabled = auditState.totalPages === 0 || auditState.page + 1 >= auditState.totalPages;
+      $('a-pagination').style.display = 'flex';
+    }
+
+    function auditEventHtml(item) {
+      var status = String(item.status || 'UNKNOWN');
+      var statusClass = status.toLowerCase();
+      var details = [];
+      if (item.actor) details.push('• Người/Đơn vị thực hiện: ' + escHtml(item.actor));
+      if (item.receiverOrganization) details.push('• Chuyển tiếp tới: ' + escHtml(item.receiverOrganization));
+      if (!auditState.documentCode && item.documentCode) details.push('• Văn bản: ' + escHtml(item.documentCode));
+      if (!auditState.transactionCode && item.transactionCode) details.push('• Giao dịch: ' + escHtml(item.transactionCode));
+
+      return '<div class="audit-event ' + statusClass + '">' +
+        '<div class="audit-event-head">' +
+          '<div><strong><span style="color:var(--muted);">' + escHtml(auditFormatTime(item.time)) + '</span>' +
+          ' &nbsp;|&nbsp; ' + escHtml(item.actionName || '-') + '</strong></div>' +
+          '<span class="audit-status ' + statusClass + '">' + escHtml(auditStatusName(status)) + '</span>' +
+        '</div>' +
+        (details.length ? '<div class="audit-event-meta">' + details.join('<br>') + '</div>' : '') +
+        (item.description ? '<div class="audit-event-description">• Chi tiết: ' + escHtml(item.description) + '</div>' : '') +
+        (item.reason ? '<div style="color:#fecaca;margin-top:8px;">Lý do: ' + escHtml(item.reason) + '</div>' : '') +
+      '</div>';
+    }
+
+    function auditSigningStatusName(status) {
+      return ({ COMPLETED: 'Đã ký số', CURRENT: 'Đang chờ duyệt ký', PENDING: 'Chờ tới lượt', REJECTED: 'Đã từ chối' })[status] || status;
+    }
+
+    function auditStatusName(status) {
+      return ({ SUCCESS: 'Thành công', REJECTED: 'Từ chối', FAILURE: 'Thất bại' })[status] || status;
+    }
+
+    function auditFormatTime(value) {
+      if (!value) return '-';
+      var date = new Date(value);
+      return isNaN(date.getTime()) ? value : date.toLocaleString('vi-VN');
+    }
+
+    function auditErrorMessage(error) {
+      var body = error && error.body;
+      return (body && (body.message || body.error)) || error.message || ('HTTP ' + (error.status || 'error'));
+    }
+
+    function auditRenderError(message) {
+      $('a-events').innerHTML = '<div style="color:var(--red);padding:16px;text-align:center;">Không tải được audit log: ' +
+        escHtml(message) + '</div>';
+      $('a-pagination').style.display = 'none';
     }
 
   </script>
